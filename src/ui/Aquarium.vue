@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import type { GameData, Habitat } from '../engine';
 import AnimatedSprite from './AnimatedSprite.vue';
 import SpriteView from './SpriteView.vue';
-import { animatedSheetFor } from './sprites';
+import { animatedSheetFor, creatureClip } from './sprites';
 
 const props = defineProps<{ captured: string[]; data: GameData }>();
 
@@ -102,7 +102,7 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
       >
         <div class="facing">
           <div class="bob">
-            <AnimatedSprite v-if="r.url" :url="r.url" animation="idle" :size="SIZE" />
+            <AnimatedSprite v-if="r.url" :clip="creatureClip(r.url, 'idle')" :size="SIZE" />
             <SpriteView v-else-if="r.sprite" :sprite="r.sprite" :size="SIZE * (2 / 3)" />
             <span v-else class="emoji">{{ r.portrait }}</span>
           </div>

@@ -1,4 +1,4 @@
-import type { CardDef, CharacterDef, EncounterDef, EnemyDef, Effect, GameData } from './types';
+import type { BuildDef, CardDef, CharacterDef, CreatureTypeDef, EncounterDef, EnemyDef, Effect, GameData } from './types';
 
 /** Content as authored: plain arrays, easy to edit by hand. */
 export interface ContentSource {
@@ -6,7 +6,8 @@ export interface ContentSource {
   cards: CardDef[];
   enemies: EnemyDef[];
   encounters: EncounterDef[];
-  starterDeck: string[];
+  builds: BuildDef[];
+  creatureTypes: CreatureTypeDef[];
 }
 
 /** Index content by id, throwing a readable error if anything is inconsistent. */
@@ -18,8 +19,14 @@ export function buildGameData(source: ContentSource): GameData {
     cards: Object.fromEntries(source.cards.map((c) => [c.id, c])),
     enemies: Object.fromEntries(source.enemies.map((e) => [e.id, e])),
     encounters: source.encounters,
-    starterDeck: source.starterDeck,
+    builds: Object.fromEntries(source.builds.map((b) => [b.id, b])),
+    creatureTypes: Object.fromEntries(source.creatureTypes.map((t) => [t.id, t])),
   };
+}
+
+/** Creature type id → display name, for card text (`DescribeOptions.tagNames`). */
+export function creatureTypeNames(data: GameData): Record<string, string> {
+  return Object.fromEntries(Object.values(data.creatureTypes).map((t) => [t.id, t.name]));
 }
 
 /** Returns a list of human-readable problems; empty means the content is valid. */
@@ -30,10 +37,14 @@ export function validateContent(source: ContentSource): string[] {
   }
   const cardIds = new Set<string>();
   const enemyIds = new Set<string>();
+  const typeIds = new Set<string>();
 
   const checkDuplicate = (seen: Set<string>, id: string, kind: string) => {
     if (seen.has(id)) errors.push(`Duplicate ${kind} id "${id}".`);
     seen.add(id);
+  };
+  const checkTags = (where: string, tags: readonly string[]) => {
+    for (const tag of tags) if (!typeIds.has(tag)) errors.push(`${where}: unknown creature type "${tag}".`);
   };
   const checkEffects = (where: string, effects: Effect[]) => {
     for (const e of effects) {
@@ -41,8 +52,11 @@ export function validateContent(source: ContentSource): string[] {
       if (e.type === 'dealDamage' && e.hits !== undefined && (!Number.isInteger(e.hits) || e.hits < 1)) {
         errors.push(`${where}: "hits" must be a whole number ≥ 1.`);
       }
+      if (e.type === 'dealDamage' && e.bonus) checkTags(`${where} damage bonus`, e.bonus.against);
     }
   };
+
+  for (const type of source.creatureTypes) checkDuplicate(typeIds, type.id, 'creature type');
 
   for (const card of source.cards) {
     checkDuplicate(cardIds, card.id, 'card');
@@ -65,6 +79,7 @@ export function validateContent(source: ContentSource): string[] {
     if (enemy.sprite && !(Number.isInteger(enemy.sprite.index) && enemy.sprite.index >= 1)) {
       errors.push(`${where}: sprite index must be a whole number ≥ 1.`);
     }
+    checkTags(where, enemy.tags ?? []);
     const moveIds = new Set<string>();
     for (const move of enemy.moves) {
       if (moveIds.has(move.id)) errors.push(`${where}: duplicate move id "${move.id}".`);
@@ -98,9 +113,17 @@ export function validateContent(source: ContentSource): string[] {
   }
   if (source.encounters.length === 0) errors.push('There must be at least one encounter.');
 
-  for (const id of source.starterDeck) {
-    if (!cardIds.has(id)) errors.push(`Starter deck references unknown card "${id}".`);
+  const buildIds = new Set<string>();
+  for (const build of source.builds) {
+    checkDuplicate(buildIds, build.id, 'build');
+    const where = `Build "${build.id}"`;
+    if (build.starterDeck.length === 0) errors.push(`${where}: starter deck is empty.`);
+    for (const id of build.starterDeck) {
+      if (!cardIds.has(id)) errors.push(`${where}: starter deck references unknown card "${id}".`);
+    }
+    checkTags(where, build.strongAgainst);
   }
+  if (source.builds.length === 0) errors.push('There must be at least one build.');
 
   return errors;
 }

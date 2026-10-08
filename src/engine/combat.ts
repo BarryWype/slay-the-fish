@@ -50,6 +50,7 @@ export function createCombat(config: CombatConfig, data: GameData): CombatState 
     state.enemies.push({
       id: `e${i}`,
       defId,
+      tags: [...(def.tags ?? [])],
       name: def.name,
       hp: maxHp,
       maxHp,

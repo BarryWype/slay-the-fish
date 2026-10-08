@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Aquarium from './Aquarium.vue';
+import BuildSelect from './BuildSelect.vue';
 import CombatView from './CombatView.vue';
 import MapView from './MapView.vue';
 import RewardScreen from './RewardScreen.vue';
@@ -17,7 +18,7 @@ function initialSeed() {
 }
 
 const game = useGame(initialSeed());
-const { data, run, combat, screen, rewardChoices } = game;
+const { data, seed, run, combat, screen, rewardChoices } = game;
 
 function newRun() {
   game.newRun(randomSeed());
@@ -28,16 +29,20 @@ function newRun() {
   <header class="topbar">
     <h1>Spire Slice</h1>
     <div class="run-info">
-      <span>Floor {{ run.floor }}</span>
-      <span>❤️ {{ combat?.player.hp ?? run.hp }}/{{ run.maxHp }}</span>
-      <span>🂠 Deck {{ run.deck.length }}</span>
-      <span class="seed" title="Open with ?seed=N in the URL to replay this run">Seed {{ run.seed }}</span>
+      <template v-if="run">
+        <span>{{ data.builds[run.build]?.name }}</span>
+        <span>Floor {{ run.floor }}</span>
+        <span>❤️ {{ combat?.player.hp ?? run.hp }}/{{ run.maxHp }}</span>
+        <span>🂠 Deck {{ run.deck.length }}</span>
+      </template>
+      <span class="seed" title="Open with ?seed=N in the URL to replay this run">Seed {{ seed }}</span>
       <button class="ghost" @click="newRun">New run</button>
     </div>
   </header>
 
   <main>
-    <div v-if="screen === 'map'" class="map-layout">
+    <BuildSelect v-if="screen === 'build' || !run" :data="data" @choose="game.chooseBuild" />
+    <div v-else-if="screen === 'map'" class="map-layout">
       <MapView :run="run" :data="data" @travel="game.travel" />
       <Aquarium class="aquarium" :captured="run.captured" :data="data" />
     </div>

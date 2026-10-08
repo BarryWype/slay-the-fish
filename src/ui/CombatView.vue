@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import {
+  creatureTypeNames,
   describeCard,
+  isCardEffectiveAgainst,
   isCardPlayable,
+  PLAYER_ID,
   previewIntent,
   type CardInstance,
   type CombatAction,
@@ -12,7 +15,14 @@ import {
 } from '../engine';
 import CardView from './CardView.vue';
 import CombatantView from './CombatantView.vue';
-import type { AnimationName } from './sprites';
+import {
+  animatedSheetFor,
+  creatureClip,
+  PLAYER_CLIPS,
+  type AnimationClip,
+  type AnimationName,
+  type PlayerAnimation,
+} from './sprites';
 
 const props = defineProps<{ state: CombatState; data: GameData }>();
 const emit = defineEmits<{ action: [CombatAction]; claimVictory: []; restart: [] }>();
@@ -39,10 +49,35 @@ watch(
 );
 onBeforeUnmount(() => clearTimeout(overlayTimer));
 
-/** Per-enemy animation, derived by comparing each new state with the previous one. */
-const animations = reactive<Record<string, { name: AnimationName; key: number }>>({});
-function animate(enemyId: string, name: AnimationName) {
-  animations[enemyId] = { name, key: (animations[enemyId]?.key ?? 0) + 1 };
+/**
+ * Per-combatant animation (keyed by combatant id, the player included), derived
+ * by comparing each new state with the previous one.
+ */
+const animations = reactive<Record<string, { name: AnimationName | PlayerAnimation; key: number }>>({});
+function animate(id: string, name: AnimationName | PlayerAnimation) {
+  animations[id] = { name, key: (animations[id]?.key ?? 0) + 1 };
+}
+
+/** Let the creature's lunge land before the fisherman flinches. */
+const HURT_DELAY_MS = 300;
+let hurtTimer: ReturnType<typeof setTimeout> | undefined;
+onBeforeUnmount(() => clearTimeout(hurtTimer));
+
+function playerClip(): AnimationClip {
+  const name = animations[PLAYER_ID]?.name;
+  return PLAYER_CLIPS[name === 'win' || name === 'hurt' ? name : 'idle'];
+}
+function enemyClip(enemy: EnemyState): AnimationClip | undefined {
+  const sprite = props.data.enemies[enemy.defId].sprite;
+  const url = sprite && animatedSheetFor(sprite);
+  const name = animations[enemy.id]?.name;
+  const creatureName: AnimationName = name === 'attack' || name === 'capture' || name === 'flee' ? name : 'idle';
+  return url ? creatureClip(url, creatureName) : undefined;
+}
+/** One-shot reactions (attack, hurt) return to idle; end-of-fight ones hold their last frame. */
+function onAnimationDone(id: string) {
+  const name = animations[id]?.name;
+  if (props.state.phase === 'playerTurn' && (name === 'attack' || name === 'hurt')) animate(id, 'idle');
 }
 
 watch(
@@ -50,6 +85,17 @@ watch(
   (state, previous) => {
     if (selectedUid.value && !isCardPlayable(state, selectedUid.value, props.data)) selectedUid.value = null;
     if (!previous) return;
+
+    if (state.phase === 'won' && previous.phase !== 'won') {
+      clearTimeout(hurtTimer); // a late flinch must not replace the victory
+      animate(PLAYER_ID, 'win');
+    } else if (state.player.hp < previous.player.hp) {
+      clearTimeout(hurtTimer);
+      hurtTimer = setTimeout(() => {
+        if (props.state.phase !== 'won') animate(PLAYER_ID, 'hurt');
+      }, HURT_DELAY_MS);
+    }
+
     for (const enemy of state.enemies) {
       const before = previous.enemies.find((e) => e.id === enemy.id);
       if (!before) continue;
@@ -66,10 +112,27 @@ watch(
   },
 );
 
+const tagNames = computed(() => creatureTypeNames(props.data));
+
 function cardText(card: CardInstance) {
-  // With a single enemy we can show exact numbers (its Vulnerable included).
-  const defender = livingEnemies.value.length === 1 ? livingEnemies.value[0].statuses : undefined;
-  return describeCard(props.data.cards[card.defId], { attacker: props.state.player.statuses, defender });
+  // With a single enemy we can show exact numbers (its Vulnerable and type bonus included).
+  const only = livingEnemies.value.length === 1 ? livingEnemies.value[0] : undefined;
+  return describeCard(props.data.cards[card.defId], {
+    attacker: props.state.player.statuses,
+    defender: only?.statuses,
+    defenderTags: only?.tags,
+    tagNames: tagNames.value,
+  });
+}
+
+/** Glow when the card's type bonus applies to at least one living enemy. */
+function isEffective(card: CardInstance) {
+  const def = props.data.cards[card.defId];
+  return livingEnemies.value.some((e) => isCardEffectiveAgainst(def, e.tags));
+}
+
+function typeLabel(enemy: EnemyState) {
+  return enemy.tags.map((t) => tagNames.value[t] ?? t).join(' · ');
 }
 
 function play(cardUid: string, targetId?: string) {
@@ -98,7 +161,13 @@ function endTurn() {
 <template>
   <div class="combat">
     <section class="battlefield">
-      <CombatantView :combatant="state.player" :portrait="data.character.portrait ?? '🧑'" />
+      <CombatantView
+        :combatant="state.player"
+        :portrait="data.character.portrait ?? '🧑'"
+        :clip="playerClip()"
+        :animation-key="animations[PLAYER_ID]?.key"
+        @animation-done="onAnimationDone(PLAYER_ID)"
+      />
       <div class="enemies">
         <CombatantView
           v-for="enemy in state.enemies"
@@ -106,11 +175,13 @@ function endTurn() {
           :combatant="enemy"
           :portrait="data.enemies[enemy.defId].portrait ?? '👹'"
           :sprite="data.enemies[enemy.defId].sprite"
-          :animation="animations[enemy.id]?.name"
+          :subtitle="typeLabel(enemy)"
+          :clip="enemyClip(enemy)"
           :animation-key="animations[enemy.id]?.key"
           :intent="previewIntent(state, enemy, data)"
           :targetable="!!selectedUid && enemy.hp > 0"
           @select="onEnemyClick(enemy)"
+          @animation-done="onAnimationDone(enemy.id)"
         />
       </div>
       <ol class="log">
@@ -132,6 +203,7 @@ function endTurn() {
           :description="cardText(card)"
           :playable="isCardPlayable(state, card.uid, data)"
           :selected="selectedUid === card.uid"
+          :effective="isEffective(card)"
           @click="onCardClick(card)"
         />
         <p v-if="selectedUid" class="hint">Choose a target…</p>

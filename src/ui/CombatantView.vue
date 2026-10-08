@@ -1,64 +1,50 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
 import type { Combatant, IntentPreview, SpriteRef } from '../engine';
 import AnimatedSprite from './AnimatedSprite.vue';
 import HealthBar from './HealthBar.vue';
 import IntentBadge from './IntentBadge.vue';
 import SpriteView from './SpriteView.vue';
 import StatusList from './StatusList.vue';
-import { animatedSheetFor, type AnimationName } from './sprites';
+import type { AnimationClip } from './sprites';
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     combatant: Combatant;
     portrait: string;
+    /** Animated art; falls back to the static `sprite`, then the emoji `portrait`. */
+    clip?: AnimationClip;
+    /** Bump to replay the same clip. */
+    animationKey?: number;
     sprite?: SpriteRef;
     intent?: IntentPreview | null;
     targetable?: boolean;
-    /** Animation to play; bump `animationKey` to replay the same one. */
-    animation?: AnimationName;
-    animationKey?: number;
+    /** Small line under the name, e.g. the creature type. */
+    subtitle?: string;
   }>(),
-  { sprite: undefined, intent: null, animation: 'idle', animationKey: 0 },
+  { clip: undefined, animationKey: 0, sprite: undefined, intent: null, subtitle: undefined },
 );
-defineEmits<{ select: [] }>();
-
-const animatedUrl = computed(() => (props.sprite ? animatedSheetFor(props.sprite) : undefined));
-
-// One-shot attacks fall back to idle; capture and flee hold their last frame.
-const current = ref<AnimationName>(props.animation);
-watch(
-  () => [props.animation, props.animationKey],
-  () => (current.value = props.animation),
-);
-function onDone(name: AnimationName) {
-  if (name === 'attack') current.value = 'idle';
-}
+defineEmits<{ select: []; animationDone: [] }>();
 </script>
 
 <template>
-  <div
-    class="combatant"
-    :class="{ dead: combatant.hp <= 0, animated: !!animatedUrl, targetable }"
-    @click="$emit('select')"
-  >
+  <div class="combatant" :class="{ dead: combatant.hp <= 0, animated: !!clip, targetable }" @click="$emit('select')">
     <div class="intent-slot">
       <IntentBadge v-if="intent && combatant.hp > 0" :intent="intent" />
     </div>
     <div class="portrait">
       <AnimatedSprite
-        v-if="animatedUrl"
-        :url="animatedUrl"
-        :animation="current"
+        v-if="clip"
+        :clip="clip"
         :play-key="animationKey"
         :size="168"
         :aria-label="combatant.name"
-        @done="onDone"
+        @done="$emit('animationDone')"
       />
       <SpriteView v-else-if="sprite" :sprite="sprite" :size="128" :aria-label="combatant.name" />
       <span v-else>{{ portrait }}</span>
     </div>
     <div class="name">{{ combatant.name }}</div>
+    <div v-if="subtitle" class="subtitle">{{ subtitle }}</div>
     <HealthBar :hp="combatant.hp" :max-hp="combatant.maxHp" :block="combatant.block" />
     <StatusList :statuses="combatant.statuses" />
   </div>
@@ -85,8 +71,17 @@ function onDone(name: AnimationName) {
   filter: drop-shadow(0 6px 6px rgb(0 0 0 / 0.5));
 }
 .name { font-weight: 700; }
+.subtitle {
+  margin-top: -4px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 0.3);
+  font-size: 0.72rem;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+}
 .dead { opacity: 0.35; filter: grayscale(1); }
-/* Animated creatures show their capture animation instead of fading out. */
+/* Animated combatants show their capture/defeat animation instead of fading out. */
 .dead.animated { opacity: 1; filter: none; }
 .dead.animated > :not(.portrait) { opacity: 0.35; }
 .targetable { cursor: crosshair; border-color: var(--highlight); background: rgb(255 255 255 / 0.04); }

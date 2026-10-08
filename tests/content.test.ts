@@ -2,17 +2,41 @@ import { describe, expect, it } from 'vitest';
 import { contentSource, gameData } from '../src/content';
 import { creatures } from '../src/content/creatures';
 import { gear } from '../src/content/gear';
-import { describeCard, validateContent, type ContentSource } from '../src/engine';
+import { creatureTypeNames, describeCard, validateContent, type ContentSource } from '../src/engine';
 
 describe('game content', () => {
   it('passes validation', () => {
     expect(validateContent(contentSource)).toEqual([]);
   });
 
-  it('starter deck is 5 Stick, 4 Bucket, 1 Small Net', () => {
-    const counts: Record<string, number> = {};
-    for (const id of gameData.starterDeck) counts[id] = (counts[id] ?? 0) + 1;
-    expect(counts).toEqual({ stick: 5, bucket: 4, smallNet: 1 });
+  it('has the three starting builds, each with a 10-card deck', () => {
+    const decks = Object.fromEntries(
+      Object.values(gameData.builds).map((b) => {
+        const counts: Record<string, number> = {};
+        for (const id of b.starterDeck) counts[id] = (counts[id] ?? 0) + 1;
+        return [b.id, counts];
+      }),
+    );
+    expect(decks).toEqual({
+      rod: { cast: 5, bucket: 4, setTheHook: 1 },
+      spear: { stick: 5, bucket: 4, harpoon: 1 },
+      foraging: { smallNet: 5, bucket: 4, crabNet: 1 },
+    });
+  });
+
+  it('every build card is strong against exactly its build’s types', () => {
+    for (const build of Object.values(gameData.builds)) {
+      for (const id of new Set(build.starterDeck)) {
+        for (const e of gameData.cards[id].effects) {
+          if (e.type === 'dealDamage' && e.bonus) expect(e.bonus.against).toEqual(build.strongAgainst);
+        }
+      }
+    }
+  });
+
+  it('every creature type is the specialty of exactly one build', () => {
+    const covered = Object.values(gameData.builds).flatMap((b) => b.strongAgainst);
+    expect([...covered].sort()).toEqual(Object.keys(gameData.creatureTypes).sort());
   });
 
   it('every card has rules text', () => {
@@ -20,11 +44,16 @@ describe('game content', () => {
   });
 
   it('generates readable rules text', () => {
-    expect(describeCard(gameData.cards.smallNet)).toBe('Deal 8 damage. Apply 2 Vulnerable.');
+    const tagNames = creatureTypeNames(gameData);
     expect(describeCard(gameData.cards.doubleCast)).toBe('Deal 5 damage 2 times.');
     expect(describeCard(gameData.cards.grandmasSandwich)).toBe('Gain 2 Energy. Exhaust.');
-    expect(describeCard(gameData.cards.stick, { attacker: { strength: 2 }, defender: { vulnerable: 1 } })).toBe(
-      'Deal 12 damage.',
+    expect(describeCard(gameData.cards.cast, { tagNames })).toBe('Deal 5 damage (+4 vs Sport fish, Small fish, Deep sea).');
+    // Against a matching creature the bonus is folded into the number.
+    expect(describeCard(gameData.cards.cast, { tagNames, defenderTags: ['sportFish'], attacker: { strength: 1 } })).toBe(
+      'Deal 10 damage.',
+    );
+    expect(describeCard(gameData.cards.cast, { tagNames, defenderTags: ['crustacean'] })).toBe(
+      'Deal 5 damage (+4 vs Sport fish, Small fish, Deep sea).',
     );
   });
 });
@@ -46,6 +75,13 @@ describe('creatures', () => {
     for (const tier of [1, 2, 3]) expect(creatures.some((c) => c.tier === tier)).toBe(true);
   });
 
+  it('every creature has a valid type, used as its enemy tag', () => {
+    for (const c of creatures) {
+      expect(gameData.creatureTypes[c.type]).toBeDefined();
+      expect(gameData.enemies[c.id].tags).toEqual([c.type]);
+    }
+  });
+
   it('starting strength is applied', () => {
     expect(gameData.enemies.swordfish.startingStatuses).toEqual({ strength: 2 });
     expect(gameData.enemies.clownfish.startingStatuses).toEqual({});
@@ -65,7 +101,8 @@ describe('content validation', () => {
     cards: [{ id: 'a', name: 'A', type: 'attack', rarity: 'common', cost: 1, target: 'enemy', effects: [{ type: 'dealDamage', amount: 1 }] }],
     enemies: [{ id: 'e', name: 'E', hp: [5, 5], moves: [{ id: 'm', name: 'M', effects: [] }], pattern: { type: 'sequence', moves: ['m'] } }],
     encounters: [{ id: 'x', name: 'X', enemies: ['e'] }],
-    starterDeck: ['a'],
+    builds: [{ id: 'b', name: 'B', description: '', starterDeck: ['a'], strongAgainst: [] }],
+    creatureTypes: [{ id: 't', name: 'T' }],
   };
 
   it('accepts valid content', () => {
@@ -80,9 +117,19 @@ describe('content validation', () => {
   it('catches unknown references', () => {
     const bad: ContentSource = {
       ...base,
-      starterDeck: ['missing'],
+      builds: [{ ...base.builds[0], starterDeck: ['missing'] }],
       encounters: [{ id: 'x', name: 'X', enemies: ['ghost'] }],
       enemies: [{ ...base.enemies[0], pattern: { type: 'sequence', moves: ['nope'] } }],
+    };
+    expect(validateContent(bad)).toHaveLength(3);
+  });
+
+  it('catches unknown creature types in tags, bonuses and builds', () => {
+    const bad: ContentSource = {
+      ...base,
+      enemies: [{ ...base.enemies[0], tags: ['ghostType'] }],
+      cards: [{ ...base.cards[0], effects: [{ type: 'dealDamage', amount: 1, bonus: { against: ['typo'], amount: 2 } }] }],
+      builds: [{ ...base.builds[0], strongAgainst: ['nope'] }],
     };
     expect(validateContent(bad)).toHaveLength(3);
   });

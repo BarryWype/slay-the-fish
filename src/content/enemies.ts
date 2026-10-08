@@ -20,6 +20,7 @@ function toEnemy(creature: CreatureDef): EnemyDef {
     hp: creature.hp,
     moves: behavior.moves,
     pattern: behavior.pattern,
+    tags: [creature.type],
     startingStatuses: { ...creature.statuses, ...(creature.strength ? { strength: creature.strength } : {}) },
     sprite: { sheet: 'fishes', index: creature.no },
     habitat: creature.habitat ?? (behaviorId && HABITAT_BY_BEHAVIOR[behaviorId]) ?? 'swim',

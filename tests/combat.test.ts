@@ -72,6 +72,35 @@ describe('playing cards', () => {
   });
 });
 
+describe('creature type bonus', () => {
+  it('adds bonus damage on every hit against a matching creature type', () => {
+    const s = play(setup(repeat('hook', 5)), 'hook'); // dummy is a 'fish'
+    expect(s.enemies[0].hp).toBe(100 - 2 * (5 + 4));
+  });
+
+  it('does nothing against other types', () => {
+    const s0 = setup(repeat('hook', 5), { enemies: ['cycler'] }); // cycler is a 'shell'
+    const s = play(s0, 'hook');
+    expect(s.enemies[0].hp).toBe(s0.enemies[0].hp - 2 * 5);
+  });
+
+  it('is added before Strength and Vulnerable', () => {
+    let s = setup(['flex', 'bash', 'hook', 'defend', 'defend']);
+    s = play(s, 'flex'); // +2 Strength
+    s = play(s, 'bash'); // (8 + 2) = 10, then Vulnerable
+    expect(s.enemies[0].hp).toBe(90);
+    s = applyAction(s, { type: 'endTurn' }, testData);
+    expect(s.enemies[0].statuses.vulnerable).toBe(1);
+    s = { ...s, piles: { ...s.piles, hand: [{ uid: 'h', defId: 'hook' }] } };
+    s = play(s, 'hook'); // 2 × floor((5 + 4 + 2) × 1.5) = 2 × 16
+    expect(s.enemies[0].hp).toBe(90 - 32);
+  });
+
+  it('enemies carry their tags into the fight', () => {
+    expect(setup(['strike']).enemies[0].tags).toEqual(['fish']);
+  });
+});
+
 describe('block', () => {
   it('absorbs enemy damage and resets at the start of the next turn', () => {
     let s = setup(repeat('defend', 10));

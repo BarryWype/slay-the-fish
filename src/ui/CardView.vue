@@ -3,8 +3,15 @@ import { computed } from 'vue';
 import { describeCard, type CardDef } from '../engine';
 
 const props = withDefaults(
-  defineProps<{ card: CardDef; description?: string; playable?: boolean; selected?: boolean }>(),
-  { description: undefined, playable: true, selected: false },
+  defineProps<{
+    card: CardDef;
+    description?: string;
+    playable?: boolean;
+    selected?: boolean;
+    /** Its type bonus applies to the current target: highlight it. */
+    effective?: boolean;
+  }>(),
+  { description: undefined, playable: true, selected: false, effective: false },
 );
 
 const TYPE_ICON: Record<CardDef['type'], string> = { attack: '⚔️', skill: '🛡️', power: '✨' };
@@ -15,7 +22,7 @@ const text = computed(() => props.description ?? describeCard(props.card));
   <button
     type="button"
     class="card"
-    :class="[card.type, `rarity-${card.rarity}`, { unplayable: !playable, selected }]"
+    :class="[card.type, `rarity-${card.rarity}`, { unplayable: !playable, selected, effective }]"
     :aria-disabled="!playable"
   >
     <span class="cost">{{ card.cost }}</span>
@@ -23,6 +30,7 @@ const text = computed(() => props.description ?? describeCard(props.card));
     <span class="art">{{ card.art ?? TYPE_ICON[card.type] }}</span>
     <span class="type">{{ card.type }}</span>
     <span class="desc">{{ text }}</span>
+    <span v-if="effective" class="effective-badge">Effective!</span>
   </button>
 </template>
 
@@ -87,5 +95,22 @@ const text = computed(() => props.description ?? describeCard(props.card));
   text-transform: uppercase;
   color: var(--muted);
 }
-.desc { flex: 1; display: grid; place-items: center; font-size: 0.8rem; line-height: 1.3; }
+.desc { flex: 1; display: grid; place-items: center; font-size: 0.78rem; line-height: 1.25; }
+
+.card.effective { box-shadow: 0 0 0 2px #7be38f, 0 0 16px rgb(123 227 143 / 0.55), 0 4px 10px rgb(0 0 0 / 0.4); }
+.effective-badge {
+  position: absolute;
+  bottom: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: #2f8a45;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 </style>

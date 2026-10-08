@@ -13,7 +13,7 @@ import {
 
 const config = (seed: number): CombatConfig => ({
   seed,
-  deck: gameData.starterDeck,
+  deck: gameData.builds.rod.starterDeck,
   enemies: ['pike'],
   playerHp: 80,
   playerMaxHp: 80,

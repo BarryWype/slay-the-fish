@@ -13,7 +13,7 @@ import { testData } from './fixtures';
 
 describe('run', () => {
   it('starts with the starter deck at full HP, on the map start', () => {
-    const run = createRun(5, testData);
+    const run = createRun(5, testData, 'basic');
     expect(run.deck).toEqual(['strike', 'defend']);
     expect(run.hp).toBe(run.maxHp);
     expect(run.position).toBe('0-0');
@@ -21,7 +21,7 @@ describe('run', () => {
   });
 
   it('offers 3 distinct non-starter cards, deterministically', () => {
-    const run = createRun(5, testData);
+    const run = createRun(5, testData, 'basic');
     const { choices } = rollCardRewards(run, testData);
     expect(choices).toHaveLength(3);
     expect(new Set(choices).size).toBe(3);
@@ -30,7 +30,7 @@ describe('run', () => {
   });
 
   it('carries HP out of combat and adds the chosen card', () => {
-    const start = createRun(5, testData);
+    const start = createRun(5, testData, 'basic');
     const { run, combat } = travelTo(start, availableDestinations(start)[0].id, testData);
     const hurt = { ...combat, phase: 'won' as const, player: { ...combat.player, hp: 50 } };
     const after = finishCombat(run, hurt);
@@ -40,9 +40,23 @@ describe('run', () => {
   });
 });
 
+describe('starting builds', () => {
+  it('the build sets the starter deck; the map depends only on the seed', () => {
+    const basic = createRun(5, testData, 'basic');
+    const angler = createRun(5, testData, 'angler');
+    expect(angler.build).toBe('angler');
+    expect(angler.deck).toEqual(['hook', 'defend']);
+    expect(angler.map).toEqual(basic.map);
+  });
+
+  it('rejects an unknown build', () => {
+    expect(() => createRun(5, testData, 'nope')).toThrow();
+  });
+});
+
 describe('capture record', () => {
   it('starts empty and only records creatures from won fights, in order', () => {
-    let run = createRun(5, testData);
+    let run = createRun(5, testData, 'basic');
     expect(run.captured).toEqual([]);
     const fight = travelTo(run, availableDestinations(run)[0].id, testData);
     run = finishCombat(fight.run, { ...fight.combat, phase: 'lost' });
@@ -55,7 +69,7 @@ describe('capture record', () => {
 
 describe('travelling the map', () => {
   it('moves to the chosen node and starts its encounter', () => {
-    const start = createRun(5, testData);
+    const start = createRun(5, testData, 'basic');
     const target = availableDestinations(start).at(-1)!;
     const { run, combat } = travelTo(start, target.id, testData);
     expect(run.position).toBe(target.id);
@@ -67,13 +81,13 @@ describe('travelling the map', () => {
   });
 
   it('refuses nodes that are not adjacent to the current position', () => {
-    const start = createRun(5, testData);
+    const start = createRun(5, testData, 'basic');
     expect(() => travelTo(start, '2-0', testData)).toThrow();
     expect(() => travelTo(start, '0-0', testData)).toThrow();
   });
 
   it('can walk any path to the end of the map', () => {
-    let run: RunState = createRun(11, testData);
+    let run: RunState = createRun(11, testData, 'basic');
     let steps = 0;
     while (!isMapComplete(run)) {
       run = travelTo(run, availableDestinations(run)[0].id, testData).run;

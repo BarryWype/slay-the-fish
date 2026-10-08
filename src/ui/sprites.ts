@@ -1,3 +1,6 @@
+import playerIdleUrl from './assets/Fisherman_fish.png';
+import playerWinUrl from './assets/Fisherman_hook.png';
+import playerHurtUrl from './assets/Fisherman_hurt.png';
 import fishesUrl from './assets/fishes.png';
 import gearUrl from './assets/fishing_gear.png';
 import objectsUrl from './assets/objects.png';
@@ -17,18 +20,39 @@ export const SHEETS: Record<string, SpriteSheet> = {
   objects: { url: objectsUrl, columns: 5, rows: 4, cell: 32 },
 };
 
+/** One animation: a row of square frames in a sheet. Looping clips repeat; others hold their last frame. */
+export interface AnimationClip {
+  url: string;
+  /** Frames in this row, and rows in the whole sheet. */
+  frames: number;
+  rows: number;
+  row: number;
+  fps: number;
+  loop: boolean;
+}
+
 /**
- * Animated sheets made by `npm run sprites`: assets/creatures/NNN.png, one per
- * `fishes` sprite. 6 frames × 4 rows of 48×48 px.
+ * Animated creature sheets made by `npm run sprites`: assets/creatures/NNN.png,
+ * one per `fishes` sprite. 6 frames × 4 rows of 48×48 px.
  */
-export const ANIMATION_FRAME = 48;
-export const ANIMATION_FRAMES = 6;
 export type AnimationName = 'idle' | 'attack' | 'capture' | 'flee';
-export const ANIMATIONS: Record<AnimationName, { row: number; fps: number; loop: boolean }> = {
+const CREATURE_ROWS: Record<AnimationName, { row: number; fps: number; loop: boolean }> = {
   idle: { row: 0, fps: 6, loop: true },
   attack: { row: 1, fps: 12, loop: false },
   capture: { row: 2, fps: 9, loop: false },
   flee: { row: 3, fps: 12, loop: false },
+};
+
+export function creatureClip(url: string, name: AnimationName): AnimationClip {
+  return { url, frames: 6, rows: 4, ...CREATURE_ROWS[name] };
+}
+
+/** The fisherman: one strip of 48×48 frames per animation. */
+export type PlayerAnimation = 'idle' | 'win' | 'hurt';
+export const PLAYER_CLIPS: Record<PlayerAnimation, AnimationClip> = {
+  idle: { url: playerIdleUrl, frames: 4, rows: 1, row: 0, fps: 4, loop: true },
+  win: { url: playerWinUrl, frames: 6, rows: 1, row: 0, fps: 8, loop: false },
+  hurt: { url: playerHurtUrl, frames: 2, rows: 1, row: 0, fps: 4, loop: false },
 };
 
 const creatureFiles = import.meta.glob<string>('./assets/creatures/*.png', { eager: true, query: '?url', import: 'default' });

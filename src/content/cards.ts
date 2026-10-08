@@ -1,21 +1,15 @@
 import type { CardDef } from '../engine';
+import { FORAGING_TARGETS, ROD_TARGETS, SPEAR_TARGETS } from './builds';
 
 /**
  * Every card in the game. Rules text is generated from `effects`
  * (set `description` to override it). See README → "Adding a card".
+ *
+ * A damage `bonus` adds damage per hit against the listed creature types,
+ * e.g. `bonus: { against: ROD_TARGETS, amount: 4 }`.
  */
 export const cards: CardDef[] = [
-  // --- Starter: what you find in the grandparents' shed -------------------
-  {
-    id: 'stick',
-    name: 'Stick',
-    art: '🪵',
-    type: 'attack',
-    rarity: 'starter',
-    cost: 1,
-    target: 'enemy',
-    effects: [{ type: 'dealDamage', amount: 6 }],
-  },
+  // --- Starter: shared ------------------------------------------------------
   {
     id: 'bucket',
     name: 'Bucket',
@@ -26,17 +20,76 @@ export const cards: CardDef[] = [
     target: 'none',
     effects: [{ type: 'gainBlock', amount: 5 }],
   },
+
+  // --- Starter: rod fishing -------------------------------------------------
+  {
+    id: 'cast',
+    name: 'Cast',
+    art: '🎣',
+    type: 'attack',
+    rarity: 'starter',
+    cost: 1,
+    target: 'enemy',
+    effects: [{ type: 'dealDamage', amount: 5, bonus: { against: ROD_TARGETS, amount: 4 } }],
+  },
+  {
+    id: 'setTheHook',
+    name: 'Set the Hook',
+    art: '🪝',
+    type: 'attack',
+    rarity: 'starter',
+    cost: 2,
+    target: 'enemy',
+    effects: [
+      { type: 'dealDamage', amount: 7, bonus: { against: ROD_TARGETS, amount: 4 } },
+      { type: 'applyStatus', status: 'vulnerable', amount: 2 },
+    ],
+  },
+
+  // --- Starter: spear fishing -----------------------------------------------
+  {
+    id: 'stick',
+    name: 'Sharp Stick',
+    art: '🪵',
+    type: 'attack',
+    rarity: 'starter',
+    cost: 1,
+    target: 'enemy',
+    effects: [{ type: 'dealDamage', amount: 5, bonus: { against: SPEAR_TARGETS, amount: 4 } }],
+  },
+  {
+    id: 'harpoon',
+    name: 'Harpoon',
+    art: '🔱',
+    type: 'attack',
+    rarity: 'starter',
+    cost: 2,
+    target: 'enemy',
+    effects: [{ type: 'dealDamage', amount: 10, bonus: { against: SPEAR_TARGETS, amount: 6 } }],
+  },
+
+  // --- Starter: foraging ----------------------------------------------------
   {
     id: 'smallNet',
     name: 'Small Net',
     art: '🥅',
     type: 'attack',
     rarity: 'starter',
+    cost: 1,
+    target: 'enemy',
+    effects: [{ type: 'dealDamage', amount: 5, bonus: { against: FORAGING_TARGETS, amount: 4 } }],
+  },
+  {
+    id: 'crabNet',
+    name: 'Crab Net',
+    art: '🦀',
+    type: 'attack',
+    rarity: 'starter',
     cost: 2,
     target: 'enemy',
     effects: [
-      { type: 'dealDamage', amount: 8 },
-      { type: 'applyStatus', status: 'vulnerable', amount: 2 },
+      { type: 'dealDamage', amount: 7, bonus: { against: FORAGING_TARGETS, amount: 4 } },
+      { type: 'applyStatus', status: 'weak', amount: 2 },
     ],
   },
 

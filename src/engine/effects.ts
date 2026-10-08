@@ -1,5 +1,5 @@
 import { PLAYER_ID } from './constants';
-import { applyDamage, calculateDamage } from './damage';
+import { applyDamage, bonusAgainst, calculateDamage, tagsOf } from './damage';
 import { drawCards } from './piles';
 import { nextInt } from './rng';
 import { addStatus, STATUS_META } from './statuses';
@@ -56,7 +56,8 @@ export function resolveEffect(state: CombatState, effect: Effect, ctx: EffectCon
       const hits = effect.hits ?? 1;
       for (let i = 0; i < hits; i++) {
         for (const t of resolveTargets(state, effect.target ?? 'target', ctx, source)) {
-          const amount = calculateDamage(effect.amount, source.statuses, t.statuses);
+          const base = effect.amount + bonusAgainst(effect.bonus, tagsOf(t));
+          const amount = calculateDamage(base, source.statuses, t.statuses);
           const { blocked, hpLost } = applyDamage(t, amount);
           addLog(state, `${source.name} hit ${t.name} for ${hpLost}${blocked ? ` (${blocked} blocked)` : ''}.`);
         }

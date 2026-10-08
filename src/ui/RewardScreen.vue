@@ -1,16 +1,24 @@
 <script setup lang="ts">
-import type { GameData } from '../engine';
+import { computed } from 'vue';
+import { creatureTypeNames, describeCard, type GameData } from '../engine';
 import CardView from './CardView.vue';
 
-defineProps<{ choices: string[]; data: GameData }>();
+const props = defineProps<{ choices: string[]; data: GameData }>();
 const emit = defineEmits<{ choose: [cardId: string | null] }>();
+const tagNames = computed(() => creatureTypeNames(props.data));
 </script>
 
 <template>
   <section class="reward">
     <h2>Choose a card to add to your deck</h2>
     <div class="choices">
-      <CardView v-for="id in choices" :key="id" :card="data.cards[id]" @click="emit('choose', id)" />
+      <CardView
+        v-for="id in choices"
+        :key="id"
+        :card="data.cards[id]"
+        :description="describeCard(data.cards[id], { tagNames })"
+        @click="emit('choose', id)"
+      />
     </div>
     <button class="ghost" @click="emit('choose', null)">Skip</button>
   </section>

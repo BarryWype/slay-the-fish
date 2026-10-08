@@ -14,9 +14,15 @@ export type Statuses = Partial<Record<StatusId, number>>;
  */
 export type EffectTarget = 'target' | 'self' | 'allEnemies' | 'randomEnemy';
 
+/** Extra damage per hit against enemies carrying any of the `against` tags (creature types). */
+export interface DamageBonus {
+  against: string[];
+  amount: number;
+}
+
 /** The reusable building blocks that every card and enemy move is made of. */
 export type Effect =
-  | { type: 'dealDamage'; amount: number; hits?: number; target?: EffectTarget }
+  | { type: 'dealDamage'; amount: number; hits?: number; target?: EffectTarget; bonus?: DamageBonus }
   | { type: 'gainBlock'; amount: number }
   | { type: 'applyStatus'; status: StatusId; amount: number; target?: EffectTarget }
   | { type: 'drawCards'; amount: number }
@@ -52,6 +58,25 @@ export interface CharacterDef {
   home: { name: string; icon?: string };
 }
 
+/** A starting build: chosen before the first fight, it sets the starter deck. */
+export interface BuildDef {
+  id: string;
+  name: string;
+  description: string;
+  /** Card ids the run starts with. */
+  starterDeck: string[];
+  /** Tags (creature types) this build's cards are strong against. Display-only. */
+  strongAgainst: string[];
+  /** Display-only art. */
+  sprite?: SpriteRef;
+}
+
+/** A creature type, used as an enemy tag (e.g. 'crustacean'). */
+export interface CreatureTypeDef {
+  id: string;
+  name: string;
+}
+
 export interface EnemyMove {
   id: string;
   name: string;
@@ -79,6 +104,8 @@ export interface EnemyDef {
   pattern: IntentPattern;
   /** Statuses the enemy starts every fight with, e.g. `{ strength: 2 }`. */
   startingStatuses?: Statuses;
+  /** Creature type ids, matched by card damage bonuses. */
+  tags?: string[];
   /** Placeholder art (emoji), used when there is no sprite. Display-only. */
   portrait?: string;
   sprite?: SpriteRef;
@@ -103,7 +130,8 @@ export interface GameData {
   cards: Record<string, CardDef>;
   enemies: Record<string, EnemyDef>;
   encounters: EncounterDef[];
-  starterDeck: string[];
+  builds: Record<string, BuildDef>;
+  creatureTypes: Record<string, CreatureTypeDef>;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +154,7 @@ export interface PlayerState extends Combatant {
 
 export interface EnemyState extends Combatant {
   defId: string;
+  tags: string[];
   /** The move this enemy will perform on its next turn (shown to the player). */
   intent: string | null;
   moveHistory: string[];

@@ -19,15 +19,19 @@ export const testData = buildGameData({
     { id: 'ponder', name: 'Ponder', type: 'skill', rarity: 'common', cost: 0, target: 'none', effects: [{ type: 'drawCards', amount: 2 }] },
     { id: 'adrenaline', name: 'Adrenaline', type: 'skill', rarity: 'uncommon', cost: 0, target: 'none', exhaust: true, effects: [{ type: 'gainEnergy', amount: 1 }] },
     { id: 'heavy', name: 'Heavy', type: 'attack', rarity: 'common', cost: 3, target: 'enemy', effects: [{ type: 'dealDamage', amount: 20 }] },
+    {
+      id: 'hook', name: 'Hook', type: 'attack', rarity: 'starter', cost: 1, target: 'enemy',
+      effects: [{ type: 'dealDamage', amount: 5, hits: 2, bonus: { against: ['fish'], amount: 4 } }],
+    },
   ],
   enemies: [
     {
-      id: 'dummy', name: 'Dummy', hp: [100, 100],
+      id: 'dummy', name: 'Dummy', hp: [100, 100], tags: ['fish'],
       moves: [{ id: 'hit', name: 'Hit', effects: [{ type: 'dealDamage', amount: 10 }] }],
       pattern: { type: 'sequence', moves: ['hit'] },
     },
     {
-      id: 'cycler', name: 'Cycler', hp: [20, 30],
+      id: 'cycler', name: 'Cycler', hp: [20, 30], tags: ['shell'],
       moves: [
         { id: 'a', name: 'A', effects: [{ type: 'applyStatus', status: 'strength', amount: 2, target: 'self' }] },
         { id: 'b', name: 'B', effects: [{ type: 'gainBlock', amount: 5 }] },
@@ -45,7 +49,14 @@ export const testData = buildGameData({
     },
   ],
   encounters: [{ id: 'dummy', name: 'Dummy', enemies: ['dummy'] }],
-  starterDeck: ['strike', 'defend'],
+  builds: [
+    { id: 'basic', name: 'Basic', description: '', starterDeck: ['strike', 'defend'], strongAgainst: [] },
+    { id: 'angler', name: 'Angler', description: '', starterDeck: ['hook', 'defend'], strongAgainst: ['fish'] },
+  ],
+  creatureTypes: [
+    { id: 'fish', name: 'Fish' },
+    { id: 'shell', name: 'Shell' },
+  ],
 });
 
 export function setup(

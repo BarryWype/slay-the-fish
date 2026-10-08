@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { ANIMATION_FRAME, ANIMATION_FRAMES, ANIMATIONS, type AnimationName } from './sprites';
+import type { AnimationClip } from './sprites';
 
 /**
- * Plays one row of an animated sheet. Looping rows run forever; one-shot rows
- * stop on their last frame and emit `done`. Change `playKey` to restart.
+ * Plays an animation clip. Looping clips run forever; one-shot clips stop on
+ * their last frame and emit `done`. Change `playKey` to restart.
  */
-const props = withDefaults(defineProps<{ url: string; animation: AnimationName; playKey?: number; size?: number }>(), {
+const props = withDefaults(defineProps<{ clip: AnimationClip; playKey?: number; size?: number }>(), {
   playKey: 0,
   size: 192,
 });
-const emit = defineEmits<{ done: [AnimationName] }>();
+const emit = defineEmits<{ done: [] }>();
 
 const frame = ref(0);
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -18,32 +18,27 @@ let timer: ReturnType<typeof setInterval> | undefined;
 function play() {
   clearInterval(timer);
   frame.value = 0;
-  const { fps, loop } = ANIMATIONS[props.animation];
-  const name = props.animation;
+  const { fps, loop, frames } = props.clip;
   timer = setInterval(() => {
-    if (frame.value < ANIMATION_FRAMES - 1) frame.value++;
+    if (frame.value < frames - 1) frame.value++;
     else if (loop) frame.value = 0;
     else {
       clearInterval(timer);
-      emit('done', name);
+      emit('done');
     }
   }, 1000 / fps);
 }
 
-watch(() => [props.animation, props.playKey, props.url], play, { immediate: true });
+watch(() => [props.clip.url, props.clip.row, props.playKey], play, { immediate: true });
 onBeforeUnmount(() => clearInterval(timer));
 
-const style = computed(() => {
-  const scale = props.size / ANIMATION_FRAME;
-  const row = ANIMATIONS[props.animation].row;
-  return {
-    width: `${props.size}px`,
-    height: `${props.size}px`,
-    backgroundImage: `url(${props.url})`,
-    backgroundSize: `${ANIMATION_FRAMES * props.size}px ${4 * props.size}px`,
-    backgroundPosition: `-${frame.value * props.size}px -${row * ANIMATION_FRAME * scale}px`,
-  };
-});
+const style = computed(() => ({
+  width: `${props.size}px`,
+  height: `${props.size}px`,
+  backgroundImage: `url(${props.clip.url})`,
+  backgroundSize: `${props.clip.frames * props.size}px ${props.clip.rows * props.size}px`,
+  backgroundPosition: `-${frame.value * props.size}px -${props.clip.row * props.size}px`,
+}));
 </script>
 
 <template>

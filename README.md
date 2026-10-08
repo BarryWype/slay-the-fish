@@ -17,7 +17,15 @@ Add `?seed=12345` to the URL to replay a specific run. The current seed is shown
 
 ## How to play
 
-You play a young fisherman setting off on their fishing journey from the grandparents' house on the waterfront. Your starting gear is 5 Sticks, 4 Buckets and a Small Net.
+You play a young fisherman setting off on their fishing journey from the grandparents' house on the waterfront. Before the first fight you pick a fishing style, which sets your starter deck:
+
+| Build | Strong against | Starter deck |
+| --- | --- | --- |
+| Rod fishing | Sport fish, Small fish, Deep sea | 5 Cast, 4 Bucket, 1 Set the Hook |
+| Spear fishing | Rock fish, Big fish, Tentacled | 5 Sharp Stick, 4 Bucket, 1 Harpoon |
+| Foraging | Crustacean, Shellfish, Critter | 5 Small Net, 4 Bucket, 1 Crab Net |
+
+Every creature has a type (shown under its name and in map tooltips). Build cards deal bonus damage to their types and glow **Effective!** when the bonus applies.
 
 - A run takes place on a map that you cross from left to right: a starting point plus 9 fights. Your position is marked **A**. Each step offers 1–3 destinations, highlighted in yellow. The layout and the enemy at each node come from the run seed. Hover over a node to see its encounter.
 - You start each turn with 5 cards and 3 energy. Click a card to play it. With several enemies, click the card and then the enemy you want to hit.
@@ -31,7 +39,7 @@ You play a young fisherman setting off on their fishing journey from the grandpa
 ```
 src/
   engine/     Pure game logic. No DOM, no Vue, no content imports.
-  content/    Game data only: character (+ home), cards, creatures + behaviors, encounters, gear, starter deck.
+  content/    Game data only: character (+ home), builds, cards, creatures + types + behaviors, encounters, gear.
   ui/         Vue components. They render state and dispatch actions.
 tests/        Vitest suites for the engine (plus content validation).
 ```
@@ -89,6 +97,10 @@ Effect reference:
 
 `target` can be `'target'` (the default: the chosen enemy, or the player when an enemy acts), `'self'`, `'allEnemies'`, or `'randomEnemy'` (re-rolled for every hit).
 
+To make a card stronger against some creature types, add a `bonus` to its damage: `{ type: 'dealDamage', amount: 5, bonus: { against: ['crustacean', 'shellfish'], amount: 4 } }`. The bonus is added to every hit before Strength and Vulnerable. `src/content/builds.ts` exports each build's type list (`ROD_TARGETS`, `SPEAR_TARGETS`, `FORAGING_TARGETS`) for reuse.
+
+To add or change a **build**, edit `src/content/builds.ts`: a name, a description, the `starterDeck` (card ids), the types it's `strongAgainst` (shown on the selection screen), and a gear sprite.
+
 Every non-starter card is automatically added to the reward pool. Run `npm test` afterwards: the content suite checks that your data is valid.
 
 ## Creatures (enemies)
@@ -100,6 +112,7 @@ Enemies are the 144 creatures in `src/ui/assets/fishes.png`, listed in **`src/co
 ```
 
 - `no` is the creature's number in `fish_names.pdf`, which is also its position in the sprite sheet (left to right, top to bottom). The sprite is picked automatically from it.
+- `type` is the creature type, one of those in `src/content/creatureTypes.ts`: `smallFish`, `sportFish`, `bigFish`, `rockFish`, `deepSea`, `crustacean`, `shellfish`, `tentacled` or `critter`. Build cards get bonus damage against some types.
 - `tier` (1–3) sets how deep in the map it appears. Columns 1–3 of the map use tier 1, columns 4–6 tier 2, and columns 7–9 tier 3.
 - `hp` is a `[min, max]` range, rolled each fight.
 - `strength` (optional) is Strength the creature starts every fight with. It is shown on screen and adds to every hit.
@@ -146,6 +159,16 @@ npm run sprites
 ```
 
 By default it only creates **missing** sheets, so any sheet you've edited by hand is kept. Pass `--force` (`npm run sprites -- --force`) to regenerate all of them. The frame motions (offsets, squash, net position) are listed at the top of `scripts/generate-creature-sprites.mjs` if you want to tweak them for every creature at once.
+
+## Player animations
+
+The fisherman uses three strips of 48×48 frames in `src/ui/assets/`. They are registered in `PLAYER_CLIPS` in `src/ui/sprites.ts`, where you can change the frame count and speed:
+
+| File | Frames | When it plays |
+| --- | --- | --- |
+| `Fisherman_fish.png` | 4 | idle, loops during the fight |
+| `Fisherman_hurt.png` | 2 | when an attack costs HP (shortly after the creature's lunge), then back to idle |
+| `Fisherman_hook.png` | 6 | when the fight is won; holds the last frame |
 
 ## Gear
 

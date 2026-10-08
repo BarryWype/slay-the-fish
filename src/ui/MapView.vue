@@ -76,7 +76,11 @@ function nodeSprite(node: MapNode) {
 
 function title(node: MapNode) {
   if (node.encounterId === null) return props.data.character.home.name;
-  return props.data.encounters.find((e) => e.id === node.encounterId)?.name ?? 'Fight';
+  const encounter = props.data.encounters.find((e) => e.id === node.encounterId);
+  const types = new Set(
+    (encounter?.enemies ?? []).flatMap((id) => props.data.enemies[id]?.tags ?? []).map((t) => props.data.creatureTypes[t]?.name ?? t),
+  );
+  return `${encounter?.name ?? 'Fight'}${types.size ? ` (${[...types].join(', ')})` : ''}`;
 }
 
 function choose(node: MapNode) {

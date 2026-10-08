@@ -8,6 +8,8 @@ import { clone } from './util';
 export interface RunState {
   seed: number;
   rng: number;
+  /** Starting build id. */
+  build: string;
   hp: number;
   maxHp: number;
   deck: string[];
@@ -24,13 +26,17 @@ export interface RunState {
 export const CARD_REWARD_COUNT = 3;
 export const START_NODE_ID = '0-0';
 
-export function createRun(seed: number, data: GameData, maxHp = data.character.maxHp): RunState {
+/** Start a run with the chosen build's starter deck. The map depends only on the seed. */
+export function createRun(seed: number, data: GameData, buildId: string, maxHp = data.character.maxHp): RunState {
+  const build = data.builds[buildId];
+  if (!build) throw new Error(`Unknown build "${buildId}"`);
   const run: RunState = {
     seed,
     rng: seed | 0,
+    build: buildId,
     hp: maxHp,
     maxHp,
-    deck: [...data.starterDeck],
+    deck: [...build.starterDeck],
     floor: 1,
     map: { columns: [] },
     position: START_NODE_ID,
