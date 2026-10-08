@@ -1,0 +1,223 @@
+import { describe, expect, it } from 'vitest';
+import { applyAction, previewIntent, validateAction, type CombatState } from '../src/engine';
+import { endTurn, play, repeat, setup, testData } from './fixtures';
+
+describe('turn structure', () => {
+  it('starts with 5 cards in hand and 3 energy', () => {
+    const s = setup(repeat('strike', 10));
+    expect(s.turn).toBe(1);
+    expect(s.phase).toBe('playerTurn');
+    expect(s.piles.hand).toHaveLength(5);
+    expect(s.piles.draw).toHaveLength(5);
+    expect(s.player.energy).toBe(3);
+  });
+
+  it('every enemy shows an intent from the start', () => {
+    const s = setup(repeat('strike', 5));
+    expect(s.enemies[0].intent).toBe('hit');
+  });
+
+  it('end turn discards the hand, enemies act, and a new hand is drawn', () => {
+    let s = setup(repeat('strike', 10));
+    s = play(s, 'strike');
+    s = endTurn(s);
+    expect(s.turn).toBe(2);
+    expect(s.player.hp).toBe(70);
+    expect(s.player.energy).toBe(3);
+    expect(s.piles.hand).toHaveLength(5);
+    expect(s.piles.discard).toHaveLength(5);
+  });
+});
+
+describe('playing cards', () => {
+  it('Strike deals 6 damage, costs 1 energy and goes to the discard pile', () => {
+    const s = play(setup(repeat('strike', 5)), 'strike');
+    expect(s.enemies[0].hp).toBe(94);
+    expect(s.player.energy).toBe(2);
+    expect(s.piles.hand).toHaveLength(4);
+    expect(s.piles.discard).toHaveLength(1);
+  });
+
+  it('cannot play a card without enough energy (state is returned unchanged)', () => {
+    const s1 = play(setup(repeat('heavy', 5)), 'heavy');
+    expect(s1.player.energy).toBe(0);
+    const s2 = play(s1, 'heavy');
+    expect(s2).toBe(s1);
+    expect(validateAction(s1, { type: 'playCard', cardUid: s1.piles.hand[0].uid, targetId: 'e0' }, testData)).toBe(
+      'Not enough energy.',
+    );
+  });
+
+  it('targeted cards require a living target', () => {
+    const s = setup(repeat('strike', 5));
+    const action = { type: 'playCard' as const, cardUid: s.piles.hand[0].uid, targetId: 'nope' };
+    expect(applyAction(s, action, testData)).toBe(s);
+  });
+
+  it('multi-hit attacks apply Strength on every hit', () => {
+    let s = setup(['flex', ...repeat('twin', 4)]);
+    s = play(s, 'flex');
+    expect(s.player.statuses.strength).toBe(2);
+    s = play(s, 'twin');
+    expect(s.enemies[0].hp).toBe(100 - 2 * (5 + 2));
+  });
+
+  it('powers and exhaust cards go to the exhaust pile', () => {
+    let s = setup(['flex', 'adrenaline', ...repeat('strike', 3)]);
+    s = play(s, 'flex');
+    s = play(s, 'adrenaline');
+    expect(s.piles.exhaust.map((c) => c.defId).sort()).toEqual(['adrenaline', 'flex']);
+    expect(s.piles.discard).toHaveLength(0);
+    expect(s.player.energy).toBe(3 - 1 + 1);
+  });
+});
+
+describe('block', () => {
+  it('absorbs enemy damage and resets at the start of the next turn', () => {
+    let s = setup(repeat('defend', 10));
+    s = play(s, 'defend');
+    s = play(s, 'defend');
+    expect(s.player.block).toBe(10);
+    s = endTurn(s); // Dummy hits for 10, fully blocked
+    expect(s.player.hp).toBe(80);
+    expect(s.player.block).toBe(0);
+  });
+
+  it('partially absorbs damage', () => {
+    let s = setup(repeat('defend', 10));
+    s = play(s, 'defend');
+    s = endTurn(s);
+    expect(s.player.hp).toBe(75);
+  });
+
+  it('enemy block resets at the start of its own turn', () => {
+    let s = setup(repeat('defend', 10), { enemies: ['cycler'] });
+    s = endTurn(s); // cycler: A (strength)
+    s = endTurn(s); // cycler: B (block 5)
+    expect(s.enemies[0].block).toBe(5);
+    s = endTurn(s); // cycler: C, block cleared first
+    expect(s.enemies[0].block).toBe(0);
+  });
+});
+
+describe('status effects', () => {
+  it('Bash applies Vulnerable, making the next attack deal 50% more', () => {
+    let s = setup(['bash', ...repeat('strike', 4)]);
+    s = play(s, 'bash');
+    expect(s.enemies[0].hp).toBe(92);
+    expect(s.enemies[0].statuses.vulnerable).toBe(2);
+    s = play(s, 'strike');
+    expect(s.enemies[0].hp).toBe(92 - 9);
+  });
+
+  it('Weak on an enemy reduces its attack damage', () => {
+    let s = setup(['weaken', ...repeat('defend', 4)]);
+    s = play(s, 'weaken');
+    s = endTurn(s);
+    expect(s.player.hp).toBe(80 - 7);
+  });
+
+  it('Vulnerable on the player increases damage taken', () => {
+    const s0 = setup(repeat('strike', 10));
+    // 2 stacks: one is lost at the end of the player's turn, one remains for the hit.
+    const s: CombatState = { ...s0, player: { ...s0.player, statuses: { vulnerable: 2 } } };
+    expect(endTurn(s).player.hp).toBe(80 - 15);
+  });
+
+  it('Vulnerable and Weak decay at the end of their owner’s turn; Strength does not', () => {
+    let s = setup(['bash', 'flex', 'weaken', 'defend', 'defend']);
+    s = play(s, 'bash');
+    s = play(s, 'flex');
+    s = play(s, 'weaken');
+    s = endTurn(s);
+    expect(s.enemies[0].statuses).toEqual({ vulnerable: 1, weak: 1 });
+    expect(s.player.statuses).toEqual({ strength: 2 });
+    s = endTurn(s);
+    expect(s.enemies[0].statuses).toEqual({});
+  });
+
+  it('intent preview shows damage after modifiers', () => {
+    const s0 = setup(repeat('strike', 5));
+    const s: CombatState = {
+      ...s0,
+      player: { ...s0.player, statuses: { vulnerable: 1 } },
+      enemies: [{ ...s0.enemies[0], statuses: { strength: 2 } }],
+    };
+    expect(previewIntent(s, s.enemies[0], testData)).toMatchObject({ kinds: ['attack'], damage: 18, hits: 1 });
+  });
+});
+
+describe('piles', () => {
+  it('reshuffles the discard pile into the draw pile when it runs out', () => {
+    let s = setup(repeat('strike', 7));
+    expect(s.piles.draw).toHaveLength(2);
+    s = endTurn(s);
+    // 2 drawn from the draw pile, then 5 discards reshuffled and 3 more drawn.
+    expect(s.piles.hand).toHaveLength(5);
+    expect(s.piles.draw).toHaveLength(2);
+    expect(s.piles.discard).toHaveLength(0);
+    const all = [...s.piles.hand, ...s.piles.draw, ...s.piles.discard].map((c) => c.uid).sort();
+    expect(new Set(all).size).toBe(7);
+  });
+
+  it('a card being played is not shuffled back in by its own draw effect', () => {
+    const s0 = setup(repeat('strike', 5));
+    const [ponder, a, b, c] = [{ uid: 'p', defId: 'ponder' }, ...s0.piles.hand];
+    const s: CombatState = { ...s0, piles: { draw: [], hand: [ponder], discard: [a, b, c], exhaust: [] } };
+    const next = play(s, 'ponder');
+    expect(next.piles.hand).toHaveLength(2);
+    expect(next.piles.draw).toHaveLength(1);
+    expect(next.piles.discard.map((x) => x.uid)).toEqual(['p']);
+  });
+
+  it('drawing with empty draw and discard piles draws nothing', () => {
+    let s = setup(['ponder', ...repeat('strike', 4)]);
+    s = play(s, 'ponder');
+    expect(s.piles.hand).toHaveLength(4);
+    expect(s.piles.draw).toHaveLength(0);
+  });
+
+  it('the hand is capped at 10 cards', () => {
+    const s0 = setup(repeat('strike', 10));
+    const ponders = Array.from({ length: 9 }, (_, i) => ({ uid: `p${i}`, defId: 'ponder' }));
+    let s: CombatState = { ...s0, piles: { draw: repeat('strike', 10).map((defId, i) => ({ uid: `s${i}`, defId })), hand: ponders, discard: [], exhaust: [] } };
+    s = play(s, 'ponder'); // 8 + 2
+    expect(s.piles.hand).toHaveLength(10);
+    s = play(s, 'ponder'); // 9 + 1, then the hand is full
+    expect(s.piles.hand).toHaveLength(10);
+    expect(s.piles.draw).toHaveLength(7);
+  });
+});
+
+describe('enemy intents', () => {
+  it('sequence patterns loop from `loopFrom`', () => {
+    let s = setup(repeat('defend', 10), { enemies: ['cycler'] });
+    for (let i = 0; i < 5; i++) s = endTurn(s);
+    expect(s.enemies[0].moveHistory).toEqual(['a', 'b', 'c', 'b', 'c']);
+  });
+
+  it('weighted patterns respect maxConsecutive', () => {
+    let s = setup(repeat('defend', 10), { enemies: ['gambler'] });
+    for (let i = 0; i < 40; i++) s = endTurn(s);
+    const history = s.enemies[0].moveHistory;
+    expect(history).toHaveLength(40);
+    for (let i = 1; i < history.length; i++) expect(history[i]).not.toBe(history[i - 1]);
+  });
+});
+
+describe('win / lose', () => {
+  it('killing the last enemy wins, after which actions are ignored', () => {
+    const s0 = setup(repeat('strike', 5));
+    const s: CombatState = { ...s0, enemies: [{ ...s0.enemies[0], hp: 5 }] };
+    const won = play(s, 'strike');
+    expect(won.phase).toBe('won');
+    expect(won.enemies[0].hp).toBe(0);
+    expect(endTurn(won)).toBe(won);
+  });
+
+  it('dropping to 0 HP loses', () => {
+    const lost = endTurn(setup(repeat('strike', 5), { hp: 5 }));
+    expect(lost.phase).toBe('lost');
+    expect(lost.player.hp).toBe(0);
+  });
+});

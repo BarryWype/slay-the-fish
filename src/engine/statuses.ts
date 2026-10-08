@@ -1,0 +1,55 @@
+import type { Combatant, StatusId } from './types';
+
+export interface StatusMeta {
+  name: string;
+  description: string;
+  kind: 'buff' | 'debuff';
+  /** Loses 1 stack at the end of its owner's turn. */
+  decays: boolean;
+}
+
+export const STATUS_META: Record<StatusId, StatusMeta> = {
+  strength: {
+    name: 'Strength',
+    description: 'Adds damage to every hit of an attack.',
+    kind: 'buff',
+    decays: false,
+  },
+  vulnerable: {
+    name: 'Vulnerable',
+    description: 'Takes 50% more damage from attacks. Decreases at end of turn.',
+    kind: 'debuff',
+    decays: true,
+  },
+  weak: {
+    name: 'Weak',
+    description: 'Deals 25% less damage with attacks. Decreases at end of turn.',
+    kind: 'debuff',
+    decays: true,
+  },
+};
+
+export function getStatus(combatant: Combatant, id: StatusId): number {
+  return combatant.statuses[id] ?? 0;
+}
+
+export function addStatus(combatant: Combatant, id: StatusId, amount: number): void {
+  const next = getStatus(combatant, id) + amount;
+  // Decaying statuses are durations, so they can't go negative. Strength can.
+  if (next === 0 || (STATUS_META[id].decays && next < 0)) {
+    delete combatant.statuses[id];
+  } else {
+    combatant.statuses[id] = next;
+  }
+}
+
+/** End-of-turn upkeep for one combatant. */
+export function tickStatuses(combatant: Combatant): void {
+  for (const id of Object.keys(combatant.statuses) as StatusId[]) {
+    if (STATUS_META[id].decays) addStatus(combatant, id, -1);
+  }
+}
+
+export function isDebuff(id: StatusId, amount: number): boolean {
+  return STATUS_META[id].kind === 'debuff' || amount < 0;
+}
