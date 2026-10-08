@@ -17,6 +17,8 @@ export interface RunState {
   position: string;
   /** Node ids travelled through, starting point included. */
   visited: string[];
+  /** Enemy definition ids of every creature beaten this run, in order (duplicates allowed). */
+  captured: string[];
 }
 
 export const CARD_REWARD_COUNT = 3;
@@ -33,6 +35,7 @@ export function createRun(seed: number, data: GameData, maxHp = data.character.m
     map: { columns: [] },
     position: START_NODE_ID,
     visited: [START_NODE_ID],
+    captured: [],
   };
   run.map = generateMap(run, data);
   return run;
@@ -66,11 +69,14 @@ export function travelTo(run: RunState, nodeId: string, data: GameData): { run: 
   return { run: next, combat };
 }
 
+/** Carry the fight's outcome into the run: HP, floor, and (on a win) the creatures captured. */
 export function finishCombat(run: RunState, combat: CombatState): RunState {
+  const won = combat.phase === 'won';
   return {
     ...clone(run),
     hp: Math.max(0, combat.player.hp),
-    floor: combat.phase === 'won' ? run.floor + 1 : run.floor,
+    floor: won ? run.floor + 1 : run.floor,
+    captured: won ? [...run.captured, ...combat.enemies.map((e) => e.defId)] : [...run.captured],
   };
 }
 

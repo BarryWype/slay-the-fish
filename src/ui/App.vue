@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Aquarium from './Aquarium.vue';
 import CombatView from './CombatView.vue';
 import MapView from './MapView.vue';
 import RewardScreen from './RewardScreen.vue';
@@ -36,7 +37,10 @@ function newRun() {
   </header>
 
   <main>
-    <MapView v-if="screen === 'map'" :run="run" :data="data" @travel="game.travel" />
+    <div v-if="screen === 'map'" class="map-layout">
+      <MapView :run="run" :data="data" @travel="game.travel" />
+      <Aquarium class="aquarium" :captured="run.captured" :data="data" />
+    </div>
     <CombatView
       v-else-if="screen === 'combat' && combat"
       :state="combat"
@@ -55,6 +59,16 @@ function newRun() {
 </template>
 
 <style scoped>
+/* Map on top, aquarium fills whatever height is left. */
+.map-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: calc(100vh - 64px);
+  padding-bottom: 12px;
+}
+.map-layout .aquarium { flex: 1; }
+
 .complete { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 15vh; }
 .complete h2 { margin: 0; font-size: 2rem; }
 </style>

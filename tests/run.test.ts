@@ -34,8 +34,22 @@ describe('run', () => {
     const { run, combat } = travelTo(start, availableDestinations(start)[0].id, testData);
     const hurt = { ...combat, phase: 'won' as const, player: { ...combat.player, hp: 50 } };
     const after = finishCombat(run, hurt);
-    expect(after).toMatchObject({ hp: 50, floor: 2 });
+    expect(after).toMatchObject({ hp: 50, floor: 2, captured: ['dummy'] });
+    expect(run.captured).toEqual([]); // input untouched
     expect(addCardToDeck(after, 'twin', testData).deck).toEqual(['strike', 'defend', 'twin']);
+  });
+});
+
+describe('capture record', () => {
+  it('starts empty and only records creatures from won fights, in order', () => {
+    let run = createRun(5, testData);
+    expect(run.captured).toEqual([]);
+    const fight = travelTo(run, availableDestinations(run)[0].id, testData);
+    run = finishCombat(fight.run, { ...fight.combat, phase: 'lost' });
+    expect(run.captured).toEqual([]);
+    run = finishCombat(run, { ...fight.combat, phase: 'won' });
+    run = finishCombat(run, { ...fight.combat, phase: 'won' });
+    expect(run.captured).toEqual(['dummy', 'dummy']);
   });
 });
 

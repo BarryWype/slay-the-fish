@@ -23,6 +23,7 @@ You play a young fisherman setting off on their fishing journey from the grandpa
 - You start each turn with 5 cards and 3 energy. Click a card to play it. With several enemies, click the card and then the enemy you want to hit.
 - Each enemy shows its **intent** above its head: 🗡️ attack (with the real damage it will deal), 🛡️ block, 💢 buff, 🌀 debuff. Hover over an intent for details.
 - Click **End Turn** and the enemies carry out the intents they showed.
+- Every creature you beat is caught in your net and goes into the **aquarium** below the map. The run keeps a record of every catch (`run.captured`).
 - After a win you pick 1 of 3 cards to add to your deck, then you return to the map. Your HP carries over between fights. Winning the fight in the last column completes the run.
 
 ## Architecture
@@ -95,13 +96,14 @@ Every non-starter card is automatically added to the reward pool. Run `npm test`
 Enemies are the 144 creatures in `src/ui/assets/fishes.png`, listed in **`src/content/creatures.ts`**, one line each:
 
 ```ts
-{ no: 54, id: 'pike', name: 'Pike', es: 'Lucio', scientific: 'Esox lucius', tier: 2, hp: [40, 44], behavior: 'predator' },
+{ no: 54, id: 'pike', name: 'Pike', scientific: 'Esox lucius', tier: 2, hp: [40, 44], behavior: 'predator' },
 ```
 
 - `no` is the creature's number in `fish_names.pdf`, which is also its position in the sprite sheet (left to right, top to bottom). The sprite is picked automatically from it.
 - `tier` (1–3) sets how deep in the map it appears. Columns 1–3 of the map use tier 1, columns 4–6 tier 2, and columns 7–9 tier 3.
 - `hp` is a `[min, max]` range, rolled each fight.
 - `strength` (optional) is Strength the creature starts every fight with. It is shown on screen and adds to every hit.
+- `habitat` (optional) is how the creature moves in the aquarium: `swim` back and forth, `drift` up and down, or crawl along the `bottom`. By default jellyfish drift; armored creatures, crustaceans and bottom dwellers crawl; everything else swims.
 - `behavior` is a shared move set from **`src/content/behaviors.ts`**: `reefFish`, `schooling`, `predator`, `venomous`, `puffer`, `ambusher`, `fighter`, `giant`, `eel`, `armored`, `jellyfish`, `cephalopod`, `crustacean` or `bottomDweller`. Change a behavior to rebalance every creature that uses it.
 
 To give one creature its own moves, write the behavior inline instead of a name. Moves use the same effect primitives as cards:
@@ -125,6 +127,25 @@ To give one creature its own moves, write the behavior inline instead of a name.
 Every creature is automatically a one-on-one encounter at its tier. For fights with several creatures, add a group in `src/content/encounters.ts`, e.g. `{ id: 'pilchardShoal', name: 'Pilchard shoal', tier: 2, enemies: ['europeanPilchard', 'europeanPilchard', 'europeanPilchard'] }`.
 
 The intent icons come from the move's effects. Damage shows as 🗡️, block as 🛡️, a status the creature applies to itself as 💢, and a status it applies to you as 🌀.
+
+## Creature animations
+
+Each creature has its own animated sheet in `src/ui/assets/creatures/NNN.png` (NNN = its `no`). A sheet has 4 rows of 6 frames, each frame 48×48 px:
+
+| Row | Animation | When it plays |
+| --- | --- | --- |
+| 1 | Idle: gentle bob | loops during the fight |
+| 2 | Attack: wind-up, lunge towards the player, impact flash | when the creature uses a damaging move |
+| 3 | Capture: a net drops over it and lifts it out | when it's defeated (holds the last frame) |
+| 4 | Flee: turns around and swims away | when you lose the fight |
+
+The sheets are generated from `fishes.png` by a script:
+
+```bash
+npm run sprites
+```
+
+By default it only creates **missing** sheets, so any sheet you've edited by hand is kept. Pass `--force` (`npm run sprites -- --force`) to regenerate all of them. The frame motions (offsets, squash, net position) are listed at the top of `scripts/generate-creature-sprites.mjs` if you want to tweak them for every creature at once.
 
 ## Gear
 

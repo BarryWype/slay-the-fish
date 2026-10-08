@@ -135,13 +135,13 @@ function choose(node: MapNode) {
 </template>
 
 <style scoped>
-.map-screen { display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 4vh; }
-.map-screen h2 { margin: 0; }
-.progress { margin: 0 0 16px; color: var(--muted); }
+.map-screen { display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0; }
+.map-screen h2 { margin: 0; font-size: 1.25rem; }
+.progress { margin: 0 0 8px; color: var(--muted); }
 
 .map {
   width: 100%;
-  max-height: 70vh;
+  max-height: 42vh;
   padding: 16px;
   border-radius: 16px;
   /* Shore on the left, deepening water to the right. */

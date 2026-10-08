@@ -82,7 +82,12 @@ export interface EnemyDef {
   /** Placeholder art (emoji), used when there is no sprite. Display-only. */
   portrait?: string;
   sprite?: SpriteRef;
+  /** How it moves around in the aquarium. Display-only. */
+  habitat?: Habitat;
 }
+
+/** `swim` back and forth, `drift` slowly up and down, or crawl along the `bottom`. */
+export type Habitat = 'swim' | 'drift' | 'bottom';
 
 export interface EncounterDef {
   id: string;

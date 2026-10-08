@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import {
   describeCard,
   isCardPlayable,
@@ -12,6 +12,7 @@ import {
 } from '../engine';
 import CardView from './CardView.vue';
 import CombatantView from './CombatantView.vue';
+import type { AnimationName } from './sprites';
 
 const props = defineProps<{ state: CombatState; data: GameData }>();
 const emit = defineEmits<{ action: [CombatAction]; claimVictory: []; restart: [] }>();
@@ -23,10 +24,45 @@ const isPlayerTurn = computed(() => props.state.phase === 'playerTurn');
 const livingEnemies = computed(() => props.state.enemies.filter((e) => e.hp > 0));
 const recentLog = computed(() => props.state.log.slice(-8).reverse());
 
+/** The end-of-fight overlay waits a moment so the capture / flee animation can play. */
+const OVERLAY_DELAY_MS = 900;
+const overlayVisible = ref(false);
+let overlayTimer: ReturnType<typeof setTimeout> | undefined;
+watch(
+  () => props.state.phase,
+  (phase) => {
+    clearTimeout(overlayTimer);
+    overlayVisible.value = false;
+    if (phase !== 'playerTurn') overlayTimer = setTimeout(() => (overlayVisible.value = true), OVERLAY_DELAY_MS);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => clearTimeout(overlayTimer));
+
+/** Per-enemy animation, derived by comparing each new state with the previous one. */
+const animations = reactive<Record<string, { name: AnimationName; key: number }>>({});
+function animate(enemyId: string, name: AnimationName) {
+  animations[enemyId] = { name, key: (animations[enemyId]?.key ?? 0) + 1 };
+}
+
 watch(
   () => props.state,
-  (state) => {
+  (state, previous) => {
     if (selectedUid.value && !isCardPlayable(state, selectedUid.value, props.data)) selectedUid.value = null;
+    if (!previous) return;
+    for (const enemy of state.enemies) {
+      const before = previous.enemies.find((e) => e.id === enemy.id);
+      if (!before) continue;
+      if (enemy.hp <= 0 && before.hp > 0) {
+        animate(enemy.id, 'capture');
+      } else if (state.phase === 'lost' && previous.phase !== 'lost' && enemy.hp > 0) {
+        animate(enemy.id, 'flee');
+      } else if (enemy.moveHistory.length > before.moveHistory.length) {
+        const moveId = enemy.moveHistory[enemy.moveHistory.length - 1];
+        const move = props.data.enemies[enemy.defId].moves.find((m) => m.id === moveId);
+        if (move?.effects.some((e) => e.type === 'dealDamage')) animate(enemy.id, 'attack');
+      }
+    }
   },
 );
 
@@ -70,6 +106,8 @@ function endTurn() {
           :combatant="enemy"
           :portrait="data.enemies[enemy.defId].portrait ?? '👹'"
           :sprite="data.enemies[enemy.defId].sprite"
+          :animation="animations[enemy.id]?.name"
+          :animation-key="animations[enemy.id]?.key"
           :intent="previewIntent(state, enemy, data)"
           :targetable="!!selectedUid && enemy.hp > 0"
           @select="onEnemyClick(enemy)"
@@ -106,7 +144,7 @@ function endTurn() {
       </div>
     </section>
 
-    <div v-if="state.phase !== 'playerTurn'" class="overlay">
+    <div v-if="state.phase !== 'playerTurn' && overlayVisible" class="overlay">
       <div class="panel">
         <template v-if="state.phase === 'won'">
           <h2>Victory!</h2>
