@@ -43,6 +43,13 @@ function deckSummary(build: BuildDef) {
           </div>
         </div>
 
+        <ul v-if="build.startingEquipment?.length" class="equipment">
+          <li v-for="id in build.startingEquipment" :key="id">
+            <span class="equipment-icon">{{ data.equipment[id]?.icon ?? '🎒' }}</span>
+            <span><b>{{ data.equipment[id]?.name }}</b>: {{ data.equipment[id]?.description }}</span>
+          </li>
+        </ul>
+
         <button @click="emit('choose', build.id)">Start with {{ build.name }}</button>
       </article>
     </div>
@@ -50,6 +57,10 @@ function deckSummary(build: BuildDef) {
 </template>
 
 <style scoped>
+.equipment { list-style: none; margin: 4px 0 8px; padding: 0; font-size: 0.82rem; color: var(--muted); text-align: left; }
+.equipment li { display: flex; gap: 6px; align-items: flex-start; }
+.equipment b { color: var(--text); }
+.equipment-icon { font-size: 1.1rem; line-height: 1.1; }
 .build-select { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0 24px; }
 .build-select h2 { margin: 0; }
 .intro { margin: 0 0 12px; max-width: 640px; text-align: center; color: var(--muted); }
@@ -82,8 +93,8 @@ function deckSummary(build: BuildDef) {
 .deck-card :deep(.card:hover) { transform: scale(0.7); }
 .count {
   position: absolute;
-  right: -2px;
-  bottom: 0;
+  top: -8px;
+  right: -6px;
   padding: 0 6px;
   border-radius: 8px;
   background: var(--panel);

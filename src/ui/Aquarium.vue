@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { GameData, Habitat } from '../engine';
 import AnimatedSprite from './AnimatedSprite.vue';
 import SpriteView from './SpriteView.vue';
 import { animatedSheetFor, creatureClip } from './sprites';
 
 const props = defineProps<{ captured: string[]; data: GameData }>();
+const emit = defineEmits<{ sell: [slot: number] }>();
 
 const SIZE = 96;
 
@@ -13,6 +14,13 @@ const SIZE = 96;
 function rand(slot: number, channel: number) {
   const x = Math.sin(slot * 127.1 + channel * 311.7) * 43758.5453;
   return x - Math.floor(x);
+}
+
+/** Stable number per string, so a fish keeps its lane when others are sold. */
+function hash(text: string) {
+  let h = 0;
+  for (const char of text) h = (h * 31 + char.charCodeAt(0)) % 10007;
+  return h;
 }
 
 function placement(habitat: Habitat, slot: number) {
@@ -33,21 +41,36 @@ function placement(habitat: Habitat, slot: number) {
   };
 }
 
-const residents = computed(() =>
-  props.captured.map((id, slot) => {
+const residents = computed(() => {
+  const copies = new Map<string, number>();
+  return props.captured.map((id, slot) => {
     const def = props.data.enemies[id];
     const habitat = def?.habitat ?? 'swim';
+    const copy = copies.get(id) ?? 0;
+    copies.set(id, copy + 1);
+    const key = `${id}#${copy}`;
     return {
-      key: `${slot}-${id}`,
+      key,
+      slot,
       name: def?.name ?? id,
+      sellValue: def?.sellValue ?? 0,
       habitat,
       url: def?.sprite ? animatedSheetFor(def.sprite) : undefined,
       sprite: def?.sprite,
       portrait: def?.portrait ?? '🐟',
-      style: placement(habitat, slot),
+      style: placement(habitat, hash(key)),
     };
-  }),
-);
+  });
+});
+
+const selectedKey = ref<string | null>(null);
+const selected = computed(() => residents.value.find((r) => r.key === selectedKey.value));
+
+function sell() {
+  if (!selected.value) return;
+  emit('sell', selected.value.slot);
+  selectedKey.value = null;
+}
 
 // Decoration: seaweed from objects.png (1 green algae, 2 red algae, 3 seaweed) and rising bubbles.
 const plants = [
@@ -96,9 +119,13 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
         v-for="r in residents"
         :key="r.key"
         class="resident"
-        :class="r.habitat"
+        :class="[r.habitat, { selected: r.key === selectedKey }]"
         :style="r.style"
-        :title="r.name"
+        :title="`${r.name} (🪙 ${r.sellValue})`"
+        role="button"
+        tabindex="0"
+        @click="selectedKey = r.key"
+        @keydown.enter="selectedKey = r.key"
       >
         <div class="facing">
           <div class="bob">
@@ -106,6 +133,15 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
             <SpriteView v-else-if="r.sprite" :sprite="r.sprite" :size="SIZE * (2 / 3)" />
             <span v-else class="emoji">{{ r.portrait }}</span>
           </div>
+        </div>
+      </div>
+
+      <div v-if="selected" class="sell-panel" @keydown.esc="selectedKey = null">
+        <strong>{{ selected.name }}</strong>
+        <span class="sell-value">🪙 {{ selected.sellValue }}</span>
+        <div class="actions">
+          <button @click="sell">Sell</button>
+          <button class="ghost" @click="selectedKey = null">Keep</button>
         </div>
       </div>
 
@@ -194,6 +230,29 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
 .drift .bob { animation-name: drift; animation-duration: calc(var(--bob) * 2); }
 .bottom .bob { animation: none; }
 .emoji { font-size: 3rem; }
+
+.resident { cursor: pointer; }
+.resident:focus { outline: none; }
+.resident:hover .bob,
+.resident:focus-visible .bob { filter: drop-shadow(0 0 4px rgb(255 255 255 / 0.7)); }
+.resident.selected .bob { filter: drop-shadow(0 0 6px var(--highlight)); }
+
+.sell-panel {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgb(20 24 32 / 0.9);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+}
+.sell-panel .sell-value { color: var(--energy); font-weight: 700; }
+.sell-panel .actions { display: flex; gap: 6px; margin-top: 4px; }
 
 .empty {
   position: absolute;

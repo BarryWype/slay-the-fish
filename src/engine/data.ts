@@ -1,4 +1,4 @@
-import type { BuildDef, CardDef, CharacterDef, CreatureTypeDef, EncounterDef, EnemyDef, Effect, GameData } from './types';
+import type { BuildDef, CardDef, CharacterDef, CreatureTypeDef, EncounterDef, EnemyDef, Effect, EquipmentDef, EventDef, GameData, ShopItemDef } from './types';
 
 /** Content as authored: plain arrays, easy to edit by hand. */
 export interface ContentSource {
@@ -8,6 +8,9 @@ export interface ContentSource {
   encounters: EncounterDef[];
   builds: BuildDef[];
   creatureTypes: CreatureTypeDef[];
+  equipment: EquipmentDef[];
+  events: EventDef[];
+  shop: ShopItemDef[];
 }
 
 /** Index content by id, throwing a readable error if anything is inconsistent. */
@@ -21,6 +24,9 @@ export function buildGameData(source: ContentSource): GameData {
     encounters: source.encounters,
     builds: Object.fromEntries(source.builds.map((b) => [b.id, b])),
     creatureTypes: Object.fromEntries(source.creatureTypes.map((t) => [t.id, t])),
+    equipment: Object.fromEntries(source.equipment.map((e) => [e.id, e])),
+    events: Object.fromEntries(source.events.map((e) => [e.id, e])),
+    shop: source.shop,
   };
 }
 
@@ -58,16 +64,30 @@ export function validateContent(source: ContentSource): string[] {
 
   for (const type of source.creatureTypes) checkDuplicate(typeIds, type.id, 'creature type');
 
+  const equipmentIds = new Set<string>();
+  for (const item of source.equipment) {
+    checkDuplicate(equipmentIds, item.id, 'equipment');
+    for (const effect of item.effects) {
+      const percent = effect.type === 'slowEscape' ? effect.percent : effect.bonusPercent;
+      if (!(percent >= 0)) errors.push(`Equipment "${item.id}": effect "${effect.type}" needs a percentage ≥ 0.`);
+    }
+  }
+
   for (const card of source.cards) {
     checkDuplicate(cardIds, card.id, 'card');
     const where = `Card "${card.id}"`;
     if (!Number.isInteger(card.cost) || card.cost < 0) errors.push(`${where}: cost must be a whole number ≥ 0.`);
     checkEffects(where, card.effects);
     const needsTarget = card.effects.some(
-      (e) => (e.type === 'dealDamage' || e.type === 'applyStatus') && (e.target ?? 'target') === 'target',
+      (e) =>
+        (e.type === 'dealDamage' || e.type === 'applyStatus' || e.type === 'changeEscape' || e.type === 'changeEscapeRate') &&
+        (e.target ?? 'target') === 'target',
     );
     if (needsTarget && card.target !== 'enemy') {
       errors.push(`${where}: an effect hits the chosen target, so the card needs target: 'enemy'.`);
+    }
+    if (card.build !== undefined && !source.builds.some((b) => b.id === card.build)) {
+      errors.push(`${where}: unknown build "${card.build}".`);
     }
   }
 
@@ -76,6 +96,10 @@ export function validateContent(source: ContentSource): string[] {
     const where = `Enemy "${enemy.id}"`;
     const [min, max] = enemy.hp;
     if (!(min > 0 && max >= min)) errors.push(`${where}: hp must be [min, max] with 0 < min ≤ max.`);
+    if (!(enemy.escapeStart > 0 && enemy.escapeAt >= enemy.escapeStart)) {
+      errors.push(`${where}: escape bar must have 0 < escapeStart ≤ escapeAt.`);
+    }
+    if (!(enemy.escapeRate >= 0)) errors.push(`${where}: escapeRate must be ≥ 0.`);
     if (enemy.sprite && !(Number.isInteger(enemy.sprite.index) && enemy.sprite.index >= 1)) {
       errors.push(`${where}: sprite index must be a whole number ≥ 1.`);
     }
@@ -113,6 +137,18 @@ export function validateContent(source: ContentSource): string[] {
   }
   if (source.encounters.length === 0) errors.push('There must be at least one encounter.');
 
+  const eventIds = new Set<string>();
+  for (const event of source.events) {
+    checkDuplicate(eventIds, event.id, 'event');
+    if (event.choices.length === 0) errors.push(`Event "${event.id}" has no choices.`);
+  }
+
+  const shopIds = new Set<string>();
+  for (const item of source.shop) {
+    checkDuplicate(shopIds, item.id, 'shop item');
+    if (!(Number.isInteger(item.price) && item.price >= 0)) errors.push(`Shop item "${item.id}": price must be a whole number ≥ 0.`);
+  }
+
   const buildIds = new Set<string>();
   for (const build of source.builds) {
     checkDuplicate(buildIds, build.id, 'build');
@@ -122,6 +158,9 @@ export function validateContent(source: ContentSource): string[] {
       if (!cardIds.has(id)) errors.push(`${where}: starter deck references unknown card "${id}".`);
     }
     checkTags(where, build.strongAgainst);
+    for (const id of build.startingEquipment ?? []) {
+      if (!equipmentIds.has(id)) errors.push(`${where}: starting equipment references unknown equipment "${id}".`);
+    }
   }
   if (source.builds.length === 0) errors.push('There must be at least one build.');
 

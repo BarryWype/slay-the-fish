@@ -2,8 +2,10 @@
 import Aquarium from './Aquarium.vue';
 import BuildSelect from './BuildSelect.vue';
 import CombatView from './CombatView.vue';
+import EventScreen from './EventScreen.vue';
 import MapView from './MapView.vue';
 import RewardScreen from './RewardScreen.vue';
+import ShopScreen from './ShopScreen.vue';
 import { useGame } from './useGame';
 
 function randomSeed() {
@@ -18,7 +20,7 @@ function initialSeed() {
 }
 
 const game = useGame(initialSeed());
-const { data, seed, run, combat, screen, rewardChoices } = game;
+const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit } = game;
 
 function newRun() {
   game.newRun(randomSeed());
@@ -33,6 +35,7 @@ function newRun() {
         <span>{{ data.builds[run.build]?.name }}</span>
         <span>Floor {{ run.floor }}</span>
         <span>❤️ {{ combat?.player.hp ?? run.hp }}/{{ run.maxHp }}</span>
+        <span title="Coins">🪙 {{ run.coins }}</span>
         <span>🂠 Deck {{ run.deck.length }}</span>
       </template>
       <span class="seed" title="Open with ?seed=N in the URL to replay this run">Seed {{ seed }}</span>
@@ -44,15 +47,26 @@ function newRun() {
     <BuildSelect v-if="screen === 'build' || !run" :data="data" @choose="game.chooseBuild" />
     <div v-else-if="screen === 'map'" class="map-layout">
       <MapView :run="run" :data="data" @travel="game.travel" />
-      <Aquarium class="aquarium" :captured="run.captured" :data="data" />
+      <Aquarium class="aquarium" :captured="run.captured" :data="data" @sell="game.sell" />
     </div>
     <CombatView
       v-else-if="screen === 'combat' && combat"
       :state="combat"
       :data="data"
+      :equipment="run.equipment"
       @action="game.dispatch"
       @claim-victory="game.claimVictory"
+      @leave="game.leaveFight"
       @restart="newRun"
+    />
+    <EventScreen v-else-if="screen === 'event' && eventId" :event-id="eventId" :run="run" :data="data" @choose="game.chooseEvent" />
+    <ShopScreen
+      v-else-if="screen === 'shop'"
+      :run="run"
+      :data="data"
+      :visit="shopVisit"
+      @buy="game.buy"
+      @leave="game.leaveShop"
     />
     <RewardScreen v-else-if="screen === 'reward'" :choices="rewardChoices" :data="data" @choose="game.chooseReward" />
     <section v-else-if="screen === 'complete'" class="complete">
@@ -64,6 +78,7 @@ function newRun() {
 </template>
 
 <style scoped>
+
 /* Map on top, aquarium fills whatever height is left. */
 .map-layout {
   display: flex;

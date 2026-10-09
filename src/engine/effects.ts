@@ -1,9 +1,9 @@
-import { PLAYER_ID } from './constants';
+import { ESCAPE_BAR_NAME, PLAYER_ID } from './constants';
 import { applyDamage, bonusAgainst, calculateDamage, tagsOf } from './damage';
 import { drawCards } from './piles';
 import { nextInt } from './rng';
 import { addStatus, STATUS_META } from './statuses';
-import type { Combatant, CombatState, Effect, EffectTarget } from './types';
+import type { Combatant, CombatState, Effect, EffectTarget, EnemyState } from './types';
 import { addLog } from './util';
 
 export interface EffectContext {
@@ -16,8 +16,9 @@ export function getCombatant(state: CombatState, id: string): Combatant | undefi
   return id === PLAYER_ID ? state.player : state.enemies.find((e) => e.id === id);
 }
 
+/** Still in the fight: not beaten down and, for a creature, its escape bar not pushed to 0. */
 export function isAlive(combatant: Combatant): boolean {
-  return combatant.hp > 0;
+  return combatant.hp > 0 && (!('escape' in combatant) || (combatant as EnemyState).escape > 0);
 }
 
 export function livingOpponents(state: CombatState, id: string): Combatant[] {
@@ -80,6 +81,22 @@ export function resolveEffect(state: CombatState, effect: Effect, ctx: EffectCon
       return;
     case 'gainEnergy':
       if (source.id === PLAYER_ID) state.player.energy += effect.amount;
+      return;
+    case 'changeEscape':
+      for (const t of resolveTargets(state, effect.target ?? 'target', ctx, source)) {
+        if (!('escape' in t)) continue;
+        const enemy = t as EnemyState;
+        enemy.escape = Math.max(0, Math.min(enemy.escapeAt, enemy.escape + effect.amount));
+        addLog(state, `${enemy.name} ${effect.amount >= 0 ? 'panics' : 'calms down'} (${ESCAPE_BAR_NAME} ${enemy.escape}/${enemy.escapeAt}).`);
+      }
+      return;
+    case 'changeEscapeRate':
+      for (const t of resolveTargets(state, effect.target ?? 'target', ctx, source)) {
+        if (!('escape' in t)) continue;
+        const enemy = t as EnemyState;
+        enemy.escapeRate = Math.max(0, enemy.escapeRate + effect.amount);
+        addLog(state, `${enemy.name}'s ${ESCAPE_BAR_NAME} now rises by ${enemy.escapeRate} a turn.`);
+      }
       return;
   }
 }

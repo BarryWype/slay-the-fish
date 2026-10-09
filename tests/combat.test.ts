@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyAction, previewIntent, validateAction, type CombatState } from '../src/engine';
+import { applyAction, isAlive, previewIntent, validateAction, type CombatState } from '../src/engine';
 import { endTurn, play, repeat, setup, testData } from './fixtures';
 
 describe('turn structure', () => {
@@ -248,5 +248,48 @@ describe('win / lose', () => {
     const lost = endTurn(setup(repeat('strike', 5), { hp: 5 }));
     expect(lost.phase).toBe('lost');
     expect(lost.player.hp).toBe(0);
+  });
+});
+
+describe('tug of war', () => {
+  it('the escape bar starts at escapeStart and rises by escapeRate each enemy turn', () => {
+    const s0 = setup(repeat('defend', 10), { enemies: ['gambler'] });
+    expect(s0.enemies[0]).toMatchObject({ escape: 4, escapeAt: 1000, escapeRate: 1 });
+    const s: CombatState = { ...s0, enemies: [{ ...s0.enemies[0], escapeRate: 10 }] };
+    expect(endTurn(endTurn(s)).enemies[0].escape).toBe(24);
+  });
+
+  it('a creature that pulls the line all the way escapes, ending the fight', () => {
+    const s0 = setup(repeat('defend', 10), { enemies: ['gambler'] });
+    const s: CombatState = { ...s0, enemies: [{ ...s0.enemies[0], escapeRate: 10, escape: 995 }] };
+    const fled = endTurn(s);
+    expect(fled.phase).toBe('fled');
+    expect(fled.enemies[0].escape).toBe(1000);
+    expect(endTurn(fled)).toBe(fled);
+  });
+
+  it('cards move the escape bar: raising it to the top makes it flee, lowering it to 0 captures it', () => {
+    const s0 = setup(repeat('calm', 3).concat(repeat('spook', 2)), { enemies: ['gambler'] });
+    const s: CombatState = { ...s0, enemies: [{ ...s0.enemies[0], escape: 25, escapeAt: 30 }] };
+    expect(play(s, 'calm').enemies[0].escape).toBe(15);
+    expect(play(s, 'spook')).toMatchObject({ phase: 'fled', enemies: [{ escape: 30 }] });
+    expect(play(play(play(s, 'calm'), 'calm'), 'calm')).toMatchObject({ phase: 'won', enemies: [{ escape: 0 }] });
+  });
+
+  it('pinning slows the rise for good (never below 0); a snare stops it for a turn', () => {
+    const s0 = setup(['pin', 'pin', 'snare', 'defend', 'defend'], { enemies: ['gambler'] });
+    const s: CombatState = { ...s0, enemies: [{ ...s0.enemies[0], escapeRate: 5 }] };
+    const pinned = play(play(s, 'pin'), 'pin');
+    expect(pinned.enemies[0].escapeRate).toBe(0);
+    const snared = play(s, 'snare');
+    expect(endTurn(snared).enemies[0].escape).toBe(4);
+    expect(endTurn(endTurn(snared)).enemies[0].escape).toBe(9);
+  });
+
+  it('a creature whose escape bar is pushed to 0 is captured like a beaten one', () => {
+    const s0 = setup(repeat('strike', 5));
+    const s: CombatState = { ...s0, enemies: [{ ...s0.enemies[0], escape: 0 }] };
+    expect(isAlive(s.enemies[0])).toBe(false);
+    expect(validateAction(s, { type: 'playCard', cardUid: s.piles.hand[0].uid, targetId: 'e0' }, testData)).not.toBeNull();
   });
 });

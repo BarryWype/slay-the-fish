@@ -4,9 +4,12 @@ import {
   creatureTypeNames,
   describeCard,
   isCardEffectiveAgainst,
+  instantSaleValue,
+  isAlive,
   isCardPlayable,
   PLAYER_ID,
   previewIntent,
+  escapeRise,
   type CardInstance,
   type CombatAction,
   type CombatState,
@@ -24,14 +27,20 @@ import {
   type PlayerAnimation,
 } from './sprites';
 
-const props = defineProps<{ state: CombatState; data: GameData }>();
-const emit = defineEmits<{ action: [CombatAction]; claimVictory: []; restart: [] }>();
+const props = defineProps<{ state: CombatState; data: GameData; equipment: string[] }>();
+const emit = defineEmits<{ action: [CombatAction]; claimVictory: []; leave: []; restart: [] }>();
 
 /** A card waiting for the player to click an enemy. */
 const selectedUid = ref<string | null>(null);
 
+/** Coins from creatures sold on the spot by equipment (null when they go to the aquarium). */
+const instantSale = computed(() => {
+  const sales = props.state.enemies.map((e) => instantSaleValue(e.defId, props.equipment, props.data));
+  return sales.some((s) => s === null) ? null : sales.reduce<number>((sum, s) => sum + (s ?? 0), 0);
+});
+
 const isPlayerTurn = computed(() => props.state.phase === 'playerTurn');
-const livingEnemies = computed(() => props.state.enemies.filter((e) => e.hp > 0));
+const livingEnemies = computed(() => props.state.enemies.filter(isAlive));
 const recentLog = computed(() => props.state.log.slice(-8).reverse());
 
 /** The end-of-fight overlay waits a moment so the capture / flee animation can play. */
@@ -86,22 +95,25 @@ watch(
     if (selectedUid.value && !isCardPlayable(state, selectedUid.value, props.data)) selectedUid.value = null;
     if (!previous) return;
 
-    if (state.phase === 'won' && previous.phase !== 'won') {
-      clearTimeout(hurtTimer); // a late flinch must not replace the victory
+    const caughtOrEscaped = state.phase === 'won' || state.phase === 'fled';
+    if (caughtOrEscaped && previous.phase === 'playerTurn') {
+      clearTimeout(hurtTimer); // a late flinch must not replace the catch
       animate(PLAYER_ID, 'win');
     } else if (state.player.hp < previous.player.hp) {
       clearTimeout(hurtTimer);
       hurtTimer = setTimeout(() => {
-        if (props.state.phase !== 'won') animate(PLAYER_ID, 'hurt');
+        if (props.state.phase !== 'won' && props.state.phase !== 'fled') animate(PLAYER_ID, 'hurt');
       }, HURT_DELAY_MS);
     }
 
     for (const enemy of state.enemies) {
       const before = previous.enemies.find((e) => e.id === enemy.id);
       if (!before) continue;
-      if (enemy.hp <= 0 && before.hp > 0) {
+      if (!isAlive(enemy) && isAlive(before)) {
         animate(enemy.id, 'capture');
-      } else if (state.phase === 'lost' && previous.phase !== 'lost' && enemy.hp > 0) {
+      } else if (state.phase === 'fled' && previous.phase !== 'fled' && enemy.escape >= enemy.escapeAt) {
+        animate(enemy.id, 'flee');
+      } else if (state.phase === 'lost' && previous.phase !== 'lost' && isAlive(enemy)) {
         animate(enemy.id, 'flee');
       } else if (enemy.moveHistory.length > before.moveHistory.length) {
         const moveId = enemy.moveHistory[enemy.moveHistory.length - 1];
@@ -149,7 +161,7 @@ function onCardClick(card: CardInstance) {
 }
 
 function onEnemyClick(enemy: EnemyState) {
-  if (selectedUid.value && enemy.hp > 0) play(selectedUid.value, enemy.id);
+  if (selectedUid.value && isAlive(enemy)) play(selectedUid.value, enemy.id);
 }
 
 function endTurn() {
@@ -179,7 +191,8 @@ function endTurn() {
           :clip="enemyClip(enemy)"
           :animation-key="animations[enemy.id]?.key"
           :intent="previewIntent(state, enemy, data)"
-          :targetable="!!selectedUid && enemy.hp > 0"
+          :escape-bar="{ escape: enemy.escape, escapeAt: enemy.escapeAt, escapeRate: escapeRise(enemy) }"
+          :targetable="!!selectedUid && isAlive(enemy)"
           @select="onEnemyClick(enemy)"
           @animation-done="onAnimationDone(enemy.id)"
         />
@@ -221,7 +234,13 @@ function endTurn() {
         <template v-if="state.phase === 'won'">
           <h2>Victory!</h2>
           <p>You won in {{ state.turn }} turn{{ state.turn === 1 ? '' : 's' }} with {{ state.player.hp }} HP left.</p>
+          <p v-if="instantSale !== null">Sold on the spot for 🪙 {{ instantSale }}.</p>
           <button @click="emit('claimVictory')">Choose a reward</button>
+        </template>
+        <template v-else-if="state.phase === 'fled'">
+          <h2>It got away!</h2>
+          <p>{{ state.enemies.find((e) => e.escape >= e.escapeAt)?.name }} broke free on turn {{ state.turn }}. No catch this time.</p>
+          <button @click="emit('leave')">Back to the map</button>
         </template>
         <template v-else>
           <h2>Defeat</h2>

@@ -12,3 +12,6 @@ export * from './combat';
 export * from './data';
 export * from './map';
 export * from './run';
+export * from './equipment';
+export * from './events';
+export * from './shop';

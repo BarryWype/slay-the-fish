@@ -9,7 +9,7 @@ export const ROD_TARGETS: CreatureType[] = ['sportFish', 'smallFish', 'deepSea']
 export const SPEAR_TARGETS: CreatureType[] = ['rockFish', 'bigFish', 'tentacled'];
 export const FORAGING_TARGETS: CreatureType[] = ['crustacean', 'shellfish', 'critter'];
 
-/** Starting builds, chosen before the first fight. Each sets the starter deck. */
+/** Starting builds, chosen before the first fight. Each sets the starter deck and equipment. */
 export const builds: BuildDef[] = [
   {
     id: 'rod',
@@ -18,6 +18,7 @@ export const builds: BuildDef[] = [
     starterDeck: ['cast', 'cast', 'cast', 'cast', 'cast', 'bucket', 'bucket', 'bucket', 'bucket', 'setTheHook'],
     strongAgainst: ROD_TARGETS,
     sprite: { sheet: 'gear', index: 1 },
+    startingEquipment: ['reliableReel'],
   },
   {
     id: 'spear',
@@ -26,6 +27,7 @@ export const builds: BuildDef[] = [
     starterDeck: ['stick', 'stick', 'stick', 'stick', 'stick', 'bucket', 'bucket', 'bucket', 'bucket', 'harpoon'],
     strongAgainst: SPEAR_TARGETS,
     sprite: { sheet: 'gear', index: 29 },
+    startingEquipment: ['sharpSpear'],
   },
   {
     id: 'foraging',
@@ -34,5 +36,6 @@ export const builds: BuildDef[] = [
     starterDeck: ['smallNet', 'smallNet', 'smallNet', 'smallNet', 'smallNet', 'bucket', 'bucket', 'bucket', 'bucket', 'crabNet'],
     strongAgainst: FORAGING_TARGETS,
     sprite: { sheet: 'gear', index: 23 },
+    startingEquipment: ['rubberDuck'],
   },
 ];

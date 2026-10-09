@@ -19,6 +19,11 @@ export const testData = buildGameData({
     { id: 'ponder', name: 'Ponder', type: 'skill', rarity: 'common', cost: 0, target: 'none', effects: [{ type: 'drawCards', amount: 2 }] },
     { id: 'adrenaline', name: 'Adrenaline', type: 'skill', rarity: 'uncommon', cost: 0, target: 'none', exhaust: true, effects: [{ type: 'gainEnergy', amount: 1 }] },
     { id: 'heavy', name: 'Heavy', type: 'attack', rarity: 'common', cost: 3, target: 'enemy', effects: [{ type: 'dealDamage', amount: 20 }] },
+    { id: 'calm', name: 'Calm', type: 'skill', rarity: 'common', cost: 0, target: 'enemy', effects: [{ type: 'changeEscape', amount: -10 }] },
+    { id: 'spook', name: 'Spook', type: 'skill', rarity: 'common', cost: 0, target: 'enemy', effects: [{ type: 'changeEscape', amount: 10 }] },
+    { id: 'pin', name: 'Pin', type: 'skill', rarity: 'common', cost: 0, target: 'enemy', effects: [{ type: 'changeEscapeRate', amount: -3 }] },
+    { id: 'snare', name: 'Snare', type: 'skill', rarity: 'common', cost: 0, target: 'enemy', effects: [{ type: 'applyStatus', status: 'snared', amount: 1 }] },
+    { id: 'lure', name: 'Lure', type: 'skill', rarity: 'common', cost: 0, target: 'none', build: 'angler', effects: [{ type: 'drawCards', amount: 1 }] },
     {
       id: 'hook', name: 'Hook', type: 'attack', rarity: 'starter', cost: 1, target: 'enemy',
       effects: [{ type: 'dealDamage', amount: 5, hits: 2, bonus: { against: ['fish'], amount: 4 } }],
@@ -26,12 +31,12 @@ export const testData = buildGameData({
   ],
   enemies: [
     {
-      id: 'dummy', name: 'Dummy', hp: [100, 100], tags: ['fish'],
+      id: 'dummy', name: 'Dummy', hp: [100, 100], sellValue: 5, escapeAt: 1000, escapeStart: 4, escapeRate: 1, tags: ['fish'],
       moves: [{ id: 'hit', name: 'Hit', effects: [{ type: 'dealDamage', amount: 10 }] }],
       pattern: { type: 'sequence', moves: ['hit'] },
     },
     {
-      id: 'cycler', name: 'Cycler', hp: [20, 30], tags: ['shell'],
+      id: 'cycler', name: 'Cycler', hp: [20, 30], escapeAt: 1000, escapeStart: 4, escapeRate: 1, tags: ['shell'],
       moves: [
         { id: 'a', name: 'A', effects: [{ type: 'applyStatus', status: 'strength', amount: 2, target: 'self' }] },
         { id: 'b', name: 'B', effects: [{ type: 'gainBlock', amount: 5 }] },
@@ -40,7 +45,7 @@ export const testData = buildGameData({
       pattern: { type: 'sequence', moves: ['a', 'b', 'c'], loopFrom: 1 },
     },
     {
-      id: 'gambler', name: 'Gambler', hp: [30, 30],
+      id: 'gambler', name: 'Gambler', hp: [30, 30], escapeAt: 1000, escapeStart: 4, escapeRate: 1,
       moves: [
         { id: 'x', name: 'X', effects: [{ type: 'dealDamage', amount: 1 }] },
         { id: 'y', name: 'Y', effects: [{ type: 'gainBlock', amount: 1 }] },
@@ -51,7 +56,13 @@ export const testData = buildGameData({
   encounters: [{ id: 'dummy', name: 'Dummy', enemies: ['dummy'] }],
   builds: [
     { id: 'basic', name: 'Basic', description: '', starterDeck: ['strike', 'defend'], strongAgainst: [] },
-    { id: 'angler', name: 'Angler', description: '', starterDeck: ['hook', 'defend'], strongAgainst: ['fish'] },
+    { id: 'angler', name: 'Angler', description: '', starterDeck: ['hook', 'defend'], strongAgainst: ['fish'], startingEquipment: ['reel'] },
+  ],
+  events: [],
+  shop: [],
+  equipment: [
+    { id: 'reel', name: 'Reel', description: '', effects: [{ type: 'slowEscape', percent: 20 }] },
+    { id: 'spear', name: 'Spear', description: '', effects: [{ type: 'sellOnCapture', bonusPercent: 20 }] },
   ],
   creatureTypes: [
     { id: 'fish', name: 'Fish' },
@@ -61,10 +72,17 @@ export const testData = buildGameData({
 
 export function setup(
   deck: string[],
-  opts: { enemies?: string[]; seed?: number; hp?: number } = {},
+  opts: { enemies?: string[]; seed?: number; hp?: number; equipment?: string[] } = {},
 ): CombatState {
   return createCombat(
-    { seed: opts.seed ?? 1, deck, enemies: opts.enemies ?? ['dummy'], playerHp: opts.hp ?? 80, playerMaxHp: 80 },
+    {
+      seed: opts.seed ?? 1,
+      deck,
+      enemies: opts.enemies ?? ['dummy'],
+      playerHp: opts.hp ?? 80,
+      playerMaxHp: 80,
+      equipment: opts.equipment,
+    },
     testData,
   );
 }

@@ -1,5 +1,6 @@
 import { createCombat } from './combat';
-import { findNode, generateMap, type GameMap, type MapNode } from './map';
+import { instantSaleValue } from './equipment';
+import { encountersFor, findNode, generateMap, type GameMap, type MapNode } from './map';
 import { nextInt, shuffleInPlace } from './rng';
 import type { CombatState, GameData } from './types';
 import { clone } from './util';
@@ -21,6 +22,9 @@ export interface RunState {
   visited: string[];
   /** Enemy definition ids of every creature beaten this run, in order (duplicates allowed). */
   captured: string[];
+  coins: number;
+  /** Equipment ids carried this run. */
+  equipment: string[];
 }
 
 export const CARD_REWARD_COUNT = 3;
@@ -42,6 +46,8 @@ export function createRun(seed: number, data: GameData, buildId: string, maxHp =
     position: START_NODE_ID,
     visited: [START_NODE_ID],
     captured: [],
+    coins: 0,
+    equipment: [...(build.startingEquipment ?? [])],
   };
   run.map = generateMap(run, data);
   return run;
@@ -57,36 +63,80 @@ export function isMapComplete(run: RunState): boolean {
   return availableDestinations(run).length === 0;
 }
 
-/** Move to an adjacent node and start its fight. Throws if the node isn't reachable. */
-export function travelTo(run: RunState, nodeId: string, data: GameData): { run: RunState; combat: CombatState } {
+/** A copy of the run standing on an adjacent node of `kind`. Throws if there's no such node. */
+function moveTo(run: RunState, nodeId: string, kind: MapNode['kind']): { next: RunState; node: MapNode } {
   const node = availableDestinations(run).find((n) => n.id === nodeId);
-  if (!node?.encounterId) throw new Error(`Can't travel to "${nodeId}" from "${run.position}".`);
-  const encounter = data.encounters.find((e) => e.id === node.encounterId);
-  if (!encounter) throw new Error(`Unknown encounter "${node.encounterId}"`);
-
+  if (!node || node.kind !== kind) throw new Error(`Can't travel to a ${kind} at "${nodeId}" from "${run.position}".`);
   const next = clone(run);
   next.position = node.id;
   next.visited.push(node.id);
+  return { next, node };
+}
+
+/** Move to an adjacent fight and start it. Throws if the node isn't a reachable fight. */
+export function travelTo(run: RunState, nodeId: string, data: GameData): { run: RunState; combat: CombatState } {
+  const { next, node } = moveTo(run, nodeId, 'fight');
+  // The creature waiting here is only decided on arrival.
+  const pool = encountersFor(node, data);
+  const encounter = pool[nextInt(next, 0, pool.length - 1)];
   const combatSeed = nextInt(next, 0, 0x7fffffff);
   const combat = createCombat(
-    { seed: combatSeed, deck: next.deck, enemies: encounter.enemies, playerHp: next.hp, playerMaxHp: next.maxHp },
+    {
+      seed: combatSeed,
+      deck: next.deck,
+      enemies: encounter.enemies,
+      playerHp: next.hp,
+      playerMaxHp: next.maxHp,
+      equipment: next.equipment,
+    },
     data,
   );
   return { run: next, combat };
 }
 
-/** Carry the fight's outcome into the run: HP, floor, and (on a win) the creatures captured. */
-export function finishCombat(run: RunState, combat: CombatState): RunState {
-  const won = combat.phase === 'won';
+/** Move to an adjacent event; which one happens is drawn on arrival, among those allowed at that column. */
+export function visitEvent(run: RunState, nodeId: string, data: GameData): { run: RunState; eventId: string } {
+  const { next, node } = moveTo(run, nodeId, 'event');
+  const ids = Object.values(data.events)
+    .filter((e) => node.column >= (e.minColumn ?? 0))
+    .map((e) => e.id);
+  if (!ids.length) throw new Error(`No event can happen at column ${node.column}.`);
+  return { run: next, eventId: ids[nextInt(next, 0, ids.length - 1)] };
+}
+
+/** Move to an adjacent shop. */
+export function visitShop(run: RunState, nodeId: string): RunState {
+  return moveTo(run, nodeId, 'shop').next;
+}
+
+/**
+ * Carry the fight's outcome into the run: HP, floor, and (on a win) the creatures
+ * captured, which go to the aquarium unless equipment sells them on the spot.
+ */
+export function finishCombat(run: RunState, combat: CombatState, data: GameData): RunState {
+  const next = { ...clone(run), hp: Math.max(0, combat.player.hp) };
+  if (combat.phase !== 'won') return next;
+  next.floor++;
+  for (const enemy of combat.enemies) {
+    const sale = instantSaleValue(enemy.defId, run.equipment, data);
+    if (sale === null) next.captured.push(enemy.defId);
+    else next.coins += sale;
+  }
+  return next;
+}
+
+/** Sell the captured creature at index `slot` for its sell value. */
+export function sellCreature(run: RunState, slot: number, data: GameData): RunState {
+  const id = run.captured[slot];
+  if (id === undefined) throw new Error(`Nothing captured at slot ${slot}`);
   return {
     ...clone(run),
-    hp: Math.max(0, combat.player.hp),
-    floor: won ? run.floor + 1 : run.floor,
-    captured: won ? [...run.captured, ...combat.enemies.map((e) => e.defId)] : [...run.captured],
+    captured: run.captured.filter((_, i) => i !== slot),
+    coins: run.coins + (data.enemies[id]?.sellValue ?? 0),
   };
 }
 
-/** Offer `count` distinct non-starter cards. */
+/** Offer `count` distinct non-starter cards: shared ones plus those of the run's build. */
 export function rollCardRewards(
   run: RunState,
   data: GameData,
@@ -94,7 +144,7 @@ export function rollCardRewards(
 ): { run: RunState; choices: string[] } {
   const next = clone(run);
   const pool = Object.values(data.cards)
-    .filter((c) => c.rarity !== 'starter')
+    .filter((c) => c.rarity !== 'starter' && (c.build === undefined || c.build === run.build))
     .map((c) => c.id);
   return { run: next, choices: shuffleInPlace(next, pool).slice(0, count) };
 }

@@ -1,9 +1,10 @@
 import { BASE_ENERGY, PLAYER_ID, STARTING_HAND_SIZE } from './constants';
+import { equipmentEffects, escapeRateReduction } from './equipment';
 import { isAlive, resolveEffect } from './effects';
 import { chooseIntent, executeIntent } from './intents';
 import { discardHand, drawCards } from './piles';
 import { nextInt, shuffleInPlace } from './rng';
-import { tickStatuses } from './statuses';
+import { escapeRise, tickStatuses } from './statuses';
 import type { CombatAction, CombatState, GameData } from './types';
 import { addLog, clone } from './util';
 
@@ -15,6 +16,8 @@ export interface CombatConfig {
   enemies: string[];
   playerHp: number;
   playerMaxHp: number;
+  /** Equipment ids carried into the fight. */
+  equipment?: string[];
 }
 
 export function createCombat(config: CombatConfig, data: GameData): CombatState {
@@ -58,8 +61,16 @@ export function createCombat(config: CombatConfig, data: GameData): CombatState 
       statuses: { ...def.startingStatuses },
       intent: null,
       moveHistory: [],
+      escape: def.escapeStart,
+      escapeAt: def.escapeAt,
+      escapeRate: def.escapeRate,
     });
   });
+
+  for (const effect of equipmentEffects(config.equipment ?? [], data)) {
+    if (effect.type !== 'slowEscape') continue;
+    for (const enemy of state.enemies) enemy.escapeRate -= escapeRateReduction(enemy.escapeRate, effect.percent);
+  }
 
   shuffleInPlace(state, state.piles.draw);
   for (const enemy of state.enemies) chooseIntent(state, enemy, data);
@@ -153,6 +164,8 @@ function endTurn(state: CombatState, data: GameData): void {
     enemy.block = 0;
     executeIntent(state, enemy, data);
     if (checkCombatEnd(state)) return;
+    if (isAlive(enemy)) enemy.escape = Math.min(enemy.escapeAt, enemy.escape + escapeRise(enemy));
+    if (checkCombatEnd(state)) return;
   }
   for (const enemy of state.enemies) {
     if (!isAlive(enemy)) continue;
@@ -165,9 +178,13 @@ function endTurn(state: CombatState, data: GameData): void {
 
 function checkCombatEnd(state: CombatState): boolean {
   if (state.phase !== 'playerTurn') return true;
+  const escaped = state.enemies.find((e) => isAlive(e) && e.escape >= e.escapeAt);
   if (state.player.hp <= 0) {
     state.phase = 'lost';
     addLog(state, 'Defeat...');
+  } else if (escaped) {
+    state.phase = 'fled';
+    addLog(state, `${escaped.name} got away!`);
   } else if (state.enemies.every((e) => !isAlive(e))) {
     state.phase = 'won';
     addLog(state, 'Victory!');

@@ -1,4 +1,5 @@
-import type { Combatant, StatusId } from './types';
+import { ESCAPE_BAR_NAME } from './constants';
+import type { Combatant, EnemyState, StatusId } from './types';
 
 export interface StatusMeta {
   name: string;
@@ -27,6 +28,12 @@ export const STATUS_META: Record<StatusId, StatusMeta> = {
     kind: 'debuff',
     decays: true,
   },
+  snared: {
+    name: 'Snared',
+    description: `Its ${ESCAPE_BAR_NAME} doesn't rise. Decreases at end of turn.`,
+    kind: 'debuff',
+    decays: true,
+  },
 };
 
 export function getStatus(combatant: Combatant, id: StatusId): number {
@@ -52,4 +59,9 @@ export function tickStatuses(combatant: Combatant): void {
 
 export function isDebuff(id: StatusId, amount: number): boolean {
   return STATUS_META[id].kind === 'debuff' || amount < 0;
+}
+
+/** How much the escape bar rises on the creature's next turn. */
+export function escapeRise(enemy: EnemyState): number {
+  return getStatus(enemy, 'snared') > 0 ? 0 : enemy.escapeRate;
 }

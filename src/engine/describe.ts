@@ -1,6 +1,7 @@
 import { bonusAgainst, calculateDamage } from './damage';
+import { ESCAPE_BAR_NAME } from './constants';
 import { STATUS_META } from './statuses';
-import type { CardDef, Effect, Statuses } from './types';
+import type { CardDef, Effect, EffectTarget, Statuses } from './types';
 
 export interface DescribeOptions {
   /** If given, damage numbers include the attacker's modifiers (Strength, Weak). */
@@ -20,13 +21,14 @@ export function describeEffect(effect: Effect, opts: DescribeOptions = {}): stri
       const target = effect.target ?? 'target';
       const defender = target === 'target' ? opts.defender : undefined;
       const bonus = bonusAgainst(effect.bonus, target === 'target' ? opts.defenderTags : undefined);
-      const dmg = calculateDamage(effect.amount + bonus, opts.attacker, defender);
+      const real = calculateDamage(effect.amount + bonus, opts.attacker, defender);
+      // The printed amount, then the real one in brackets when modifiers change it.
+      const dmg = real === effect.amount ? `${real}` : `${effect.amount} (${real})`;
       const times = (effect.hits ?? 1) > 1 ? ` ${effect.hits} times` : '';
-      // When the bonus already applies, it's folded into the number above.
-      const extra =
-        effect.bonus && !bonus
-          ? ` (+${effect.bonus.amount} vs ${effect.bonus.against.map((t) => opts.tagNames?.[t] ?? t).join(', ')})`
-          : '';
+      // Always named, so a bracketed real number never appears without its reason.
+      const extra = effect.bonus
+        ? ` (+${effect.bonus.amount} vs ${effect.bonus.against.map((t) => opts.tagNames?.[t] ?? t).join(', ')})`
+        : '';
       if (target === 'allEnemies') return `Deal ${dmg} damage to ALL enemies${times}${extra}.`;
       if (target === 'randomEnemy') return `Deal ${dmg} damage to a random enemy${times}${extra}.`;
       if (target === 'self') return `Take ${dmg} damage${times}.`;
@@ -47,7 +49,22 @@ export function describeEffect(effect: Effect, opts: DescribeOptions = {}): stri
       return `Draw ${effect.amount} card${effect.amount === 1 ? '' : 's'}.`;
     case 'gainEnergy':
       return `Gain ${effect.amount} Energy.`;
+    case 'changeEscape': {
+      const verb = effect.amount >= 0 ? 'Raise' : 'Lower';
+      return `${verb} ${whose(effect.target)} ${ESCAPE_BAR_NAME} by ${Math.abs(effect.amount)}.`;
+    }
+    case 'changeEscapeRate': {
+      const who = whose(effect.target);
+      const speed = effect.amount >= 0 ? 'faster' : 'slower';
+      return `${who.charAt(0).toUpperCase() + who.slice(1)} ${ESCAPE_BAR_NAME} rises ${Math.abs(effect.amount)} ${speed} each turn.`;
+    }
   }
+}
+
+function whose(target: EffectTarget = 'target'): string {
+  if (target === 'allEnemies') return "ALL enemies'";
+  if (target === 'randomEnemy') return "a random enemy's";
+  return 'its';
 }
 
 export function describeEffects(effects: Effect[], opts: DescribeOptions = {}): string {

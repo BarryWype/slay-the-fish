@@ -2,8 +2,8 @@ import type { EnemyDef, Habitat } from '../engine';
 import { behaviors, type BehaviorId } from './behaviors';
 import { creatures, type CreatureDef } from './creatures';
 
-/** Default aquarium movement per behavior (anything not listed swims). */
-const HABITAT_BY_BEHAVIOR: Partial<Record<BehaviorId, Habitat>> = {
+/** Default aquarium movement per temperament (anything not listed swims). */
+const HABITAT_BY_TEMPERAMENT: Partial<Record<BehaviorId, Habitat>> = {
   jellyfish: 'drift',
   armored: 'bottom',
   crustacean: 'bottom',
@@ -12,18 +12,22 @@ const HABITAT_BY_BEHAVIOR: Partial<Record<BehaviorId, Habitat>> = {
 
 /** Turns a creature entry into an engine enemy. Edit creatures.ts / behaviors.ts, not this. */
 function toEnemy(creature: CreatureDef): EnemyDef {
-  const behaviorId = typeof creature.behavior === 'string' ? creature.behavior : undefined;
-  const behavior = behaviorId ? behaviors[behaviorId] : (creature.behavior as Exclude<CreatureDef['behavior'], string>);
+  // Its own move set when it has one, otherwise its temperament's.
+  const behavior = creature.moves ?? behaviors[creature.temperament];
   return {
     id: creature.id,
     name: creature.name,
     hp: creature.hp,
+    sellValue: creature.sellValue,
+    escapeAt: creature.escapeAt,
+    escapeStart: creature.escapeStart,
+    escapeRate: creature.escapeRate,
     moves: behavior.moves,
     pattern: behavior.pattern,
     tags: [creature.type],
     startingStatuses: { ...creature.statuses, ...(creature.strength ? { strength: creature.strength } : {}) },
     sprite: { sheet: 'fishes', index: creature.no },
-    habitat: creature.habitat ?? (behaviorId && HABITAT_BY_BEHAVIOR[behaviorId]) ?? 'swim',
+    habitat: creature.habitat ?? HABITAT_BY_TEMPERAMENT[creature.temperament] ?? 'swim',
   };
 }
 

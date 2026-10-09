@@ -26,7 +26,8 @@ describe('game content', () => {
 
   it('every build card is strong against exactly its build’s types', () => {
     for (const build of Object.values(gameData.builds)) {
-      for (const id of new Set(build.starterDeck)) {
+      const buildCards = Object.values(gameData.cards).filter((c) => c.build === build.id).map((c) => c.id);
+      for (const id of new Set([...build.starterDeck, ...buildCards])) {
         for (const e of gameData.cards[id].effects) {
           if (e.type === 'dealDamage' && e.bonus) expect(e.bonus.against).toEqual(build.strongAgainst);
         }
@@ -46,11 +47,26 @@ describe('game content', () => {
   it('generates readable rules text', () => {
     const tagNames = creatureTypeNames(gameData);
     expect(describeCard(gameData.cards.doubleCast)).toBe('Deal 5 damage 2 times.');
+    expect(describeCard(gameData.cards.playTheLine)).toBe('Lower its Panic by 10. Gain 4 Block.');
+    expect(describeCard(gameData.cards.scatterBait)).toBe("Lower ALL enemies' Panic by 8.");
+    expect(describeCard(gameData.cards.tireItOut)).toBe('Its Panic rises 3 slower each turn. Exhaust.');
+    expect(describeCard(gameData.cards.tangleNet, { tagNames, defenderTags: ['crustacean'] })).toBe(
+      'Deal 2 (4) damage (+2 vs Crustacean, Shellfish, Critter). Apply 2 Snared.',
+    );
     expect(describeCard(gameData.cards.grandmasSandwich)).toBe('Gain 2 Energy. Exhaust.');
     expect(describeCard(gameData.cards.cast, { tagNames })).toBe('Deal 5 damage (+4 vs Sport fish, Small fish, Deep sea).');
-    // Against a matching creature the bonus is folded into the number.
+    // Against a matching creature the real number (bonus and modifiers included) follows in brackets.
+    expect(describeCard(gameData.cards.cast, { tagNames, defenderTags: ['smallFish'] })).toBe(
+      'Deal 5 (9) damage (+4 vs Sport fish, Small fish, Deep sea).',
+    );
     expect(describeCard(gameData.cards.cast, { tagNames, defenderTags: ['sportFish'], attacker: { strength: 1 } })).toBe(
-      'Deal 10 damage.',
+      'Deal 5 (10) damage (+4 vs Sport fish, Small fish, Deep sea).',
+    );
+    expect(describeCard(gameData.cards.stick, { tagNames, defenderTags: ['smallFish'] })).toBe(
+      'Deal 5 damage (+4 vs Rock fish, Big fish, Tentacled).',
+    );
+    expect(describeCard(gameData.cards.cast, { tagNames, attacker: { weak: 1 } })).toBe(
+      'Deal 5 (3) damage (+4 vs Sport fish, Small fish, Deep sea).',
     );
     expect(describeCard(gameData.cards.cast, { tagNames, defenderTags: ['crustacean'] })).toBe(
       'Deal 5 damage (+4 vs Sport fish, Small fish, Deep sea).',
@@ -62,6 +78,31 @@ describe('creatures', () => {
   it('has one entry per sprite (1–144), with unique ids', () => {
     expect(creatures.map((c) => c.no)).toEqual(Array.from({ length: 144 }, (_, i) => i + 1));
     expect(new Set(creatures.map((c) => c.id)).size).toBe(creatures.length);
+  });
+
+  it('escapeAt is 50–200 and the bar starts part way up it', () => {
+    for (const c of creatures) {
+      expect(c.escapeAt).toBeGreaterThanOrEqual(50);
+      expect(c.escapeAt).toBeLessThanOrEqual(200);
+      expect(c.escapeStart).toBeGreaterThan(0);
+      expect(c.escapeStart).toBeLessThan(c.escapeAt);
+    }
+  });
+
+  it('small fish pull gently', () => {
+    const average = (list: typeof creatures) => list.reduce((sum, c) => sum + c.escapeRate, 0) / list.length;
+    expect(average(creatures.filter((c) => c.type === 'smallFish'))).toBeLessThan(average(creatures));
+  });
+
+  it('sell values range from 2 to 20 and deeper tiers are worth more', () => {
+    const values = creatures.map((c) => c.sellValue);
+    expect(Math.min(...values)).toBe(2);
+    expect(Math.max(...values)).toBe(20);
+    for (const tier of [1, 2] as const) {
+      const highest = Math.max(...creatures.filter((c) => c.tier === tier).map((c) => c.sellValue));
+      const lowestDeeper = Math.min(...creatures.filter((c) => c.tier === tier + 1).map((c) => c.sellValue));
+      expect(highest).toBeLessThan(lowestDeeper);
+    }
   });
 
   it('every creature is an enemy with its sprite, and a solo encounter at its tier', () => {
@@ -88,6 +129,21 @@ describe('creatures', () => {
   });
 });
 
+describe('equipment', () => {
+  it('each build starts with one piece of equipment', () => {
+    expect(Object.fromEntries(Object.values(gameData.builds).map((b) => [b.id, b.startingEquipment]))).toEqual({
+      rod: ['reliableReel'],
+      spear: ['sharpSpear'],
+      foraging: ['rubberDuck'],
+    });
+  });
+
+  it('catches unknown starting equipment', () => {
+    const bad = { ...contentSource, builds: contentSource.builds.map((b, i) => (i ? b : { ...b, startingEquipment: ['ghost'] })) };
+    expect(validateContent(bad)).toHaveLength(1);
+  });
+});
+
 describe('gear', () => {
   it('has one entry per sprite (1–36), with unique ids', () => {
     expect(gear.map((g) => g.no)).toEqual(Array.from({ length: 36 }, (_, i) => i + 1));
@@ -99,10 +155,13 @@ describe('content validation', () => {
   const base: ContentSource = {
     character: { name: 'C', maxHp: 10, home: { name: 'Home' } },
     cards: [{ id: 'a', name: 'A', type: 'attack', rarity: 'common', cost: 1, target: 'enemy', effects: [{ type: 'dealDamage', amount: 1 }] }],
-    enemies: [{ id: 'e', name: 'E', hp: [5, 5], moves: [{ id: 'm', name: 'M', effects: [] }], pattern: { type: 'sequence', moves: ['m'] } }],
+    enemies: [{ id: 'e', name: 'E', hp: [5, 5], escapeAt: 50, escapeStart: 25, escapeRate: 10, moves: [{ id: 'm', name: 'M', effects: [] }], pattern: { type: 'sequence', moves: ['m'] } }],
     encounters: [{ id: 'x', name: 'X', enemies: ['e'] }],
     builds: [{ id: 'b', name: 'B', description: '', starterDeck: ['a'], strongAgainst: [] }],
     creatureTypes: [{ id: 't', name: 'T' }],
+    equipment: [],
+    events: [],
+    shop: [],
   };
 
   it('accepts valid content', () => {

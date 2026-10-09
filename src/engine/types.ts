@@ -2,7 +2,7 @@
 // Content definitions: the shapes designers fill in under /src/content.
 // ---------------------------------------------------------------------------
 
-export type StatusId = 'strength' | 'vulnerable' | 'weak';
+export type StatusId = 'strength' | 'vulnerable' | 'weak' | 'snared';
 export type Statuses = Partial<Record<StatusId, number>>;
 
 /**
@@ -26,7 +26,11 @@ export type Effect =
   | { type: 'gainBlock'; amount: number }
   | { type: 'applyStatus'; status: StatusId; amount: number; target?: EffectTarget }
   | { type: 'drawCards'; amount: number }
-  | { type: 'gainEnergy'; amount: number };
+  | { type: 'gainEnergy'; amount: number }
+  /** Move a creature's escape bar: negative calms it toward capture (0), positive panics it toward fleeing. */
+  | { type: 'changeEscape'; amount: number; target?: EffectTarget }
+  /** Permanently change how fast a creature's escape bar rises each turn (never below 0). */
+  | { type: 'changeEscapeRate'; amount: number; target?: EffectTarget };
 
 export type CardType = 'attack' | 'skill' | 'power';
 export type CardRarity = 'starter' | 'common' | 'uncommon' | 'rare';
@@ -42,6 +46,8 @@ export interface CardDef {
   effects: Effect[];
   /** Removed from the fight after being played. Powers always exhaust. */
   exhaust?: boolean;
+  /** Only offered as a reward to this build. Offered to every build if omitted. */
+  build?: string;
   /** Optional text override. Normally generated from `effects`. */
   description?: string;
   /** Placeholder art (emoji). Display-only; ignored by the engine. */
@@ -69,12 +75,75 @@ export interface BuildDef {
   strongAgainst: string[];
   /** Display-only art. */
   sprite?: SpriteRef;
+  /** Equipment ids the run starts with. */
+  startingEquipment?: string[];
+}
+
+/** What a piece of equipment does. Percentages are whole numbers (20 = 20%). */
+export type EquipmentEffect =
+  /** Every creature's escape rate drops by this share (at least 1, rounded up) at the start of each fight. */
+  | { type: 'slowEscape'; percent: number }
+  /** Captured creatures are sold on the spot, for this much more, instead of going to the aquarium. */
+  | { type: 'sellOnCapture'; bonusPercent: number }
+  /** Enthusiastic passersby pay this much more per fish. Passerby encounters aren't in the game yet. */
+  | { type: 'passerbyBonus'; bonusPercent: number };
+
+/** An object carried for the whole run, with passive effects. */
+export interface EquipmentDef {
+  id: string;
+  name: string;
+  /** Player-facing rules text. */
+  description: string;
+  /** Placeholder art (emoji). Display-only. */
+  icon?: string;
+  effects: EquipmentEffect[];
+}
+
+/** What a map event's choice does. Percentages are whole numbers (30 = 30%). */
+export type EventEffect =
+  | { type: 'heal'; percent: number }
+  | { type: 'loseHp'; amount: number }
+  | { type: 'gainCoins'; amount: number }
+  /** Coins for each creature in the aquarium (raised by passerby equipment bonuses). The creatures stay. */
+  | { type: 'coinsPerCreature'; amount: number }
+  /** Offer the usual pick-1-of-3 card reward afterwards. */
+  | { type: 'cardReward' };
+
+export interface EventChoice {
+  label: string;
+  effects: EventEffect[];
+}
+
+/** Something that happens on a map event instead of a fight. */
+export interface EventDef {
+  id: string;
+  name: string;
+  description: string;
+  /** Placeholder art (emoji). Display-only. */
+  icon?: string;
+  /** Only drawn on map columns from this one on. Anywhere events can be if omitted. */
+  minColumn?: number;
+  choices: EventChoice[];
+}
+
+/** Something for sale in a shop. */
+export interface ShopItemDef {
+  id: string;
+  name: string;
+  /** Placeholder art (emoji). Display-only. */
+  icon?: string;
+  price: number;
+  effect: { type: 'heal'; amount: number } | { type: 'removeCard' };
+  /** How many times it can be bought per shop visit. Unlimited if omitted. */
+  limit?: number;
 }
 
 /** A creature type, used as an enemy tag (e.g. 'crustacean'). */
 export interface CreatureTypeDef {
   id: string;
   name: string;
+  /** Placeholder art (emoji) for map events of this type. Display-only. */
+  icon?: string;
 }
 
 export interface EnemyMove {
@@ -100,6 +169,14 @@ export interface EnemyDef {
   name: string;
   /** Inclusive [min, max] HP range, rolled with the combat seed. */
   hp: [number, number];
+  /** Coins it sells for once captured. Defaults to 0. */
+  sellValue?: number;
+  /** The tug of war: the escape bar flees at `escapeAt`, captures at 0. */
+  escapeAt: number;
+  /** Escape bar value at the start of combat. */
+  escapeStart: number;
+  /** How much the escape bar rises each enemy turn. */
+  escapeRate: number;
   moves: EnemyMove[];
   pattern: IntentPattern;
   /** Statuses the enemy starts every fight with, e.g. `{ strength: 2 }`. */
@@ -132,6 +209,9 @@ export interface GameData {
   encounters: EncounterDef[];
   builds: Record<string, BuildDef>;
   creatureTypes: Record<string, CreatureTypeDef>;
+  equipment: Record<string, EquipmentDef>;
+  events: Record<string, EventDef>;
+  shop: ShopItemDef[];
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +238,10 @@ export interface EnemyState extends Combatant {
   /** The move this enemy will perform on its next turn (shown to the player). */
   intent: string | null;
   moveHistory: string[];
+  /** The escape bar, 0..escapeAt: it flees at `escapeAt` and is captured at 0. */
+  escape: number;
+  escapeAt: number;
+  escapeRate: number;
 }
 
 export interface CardInstance {
@@ -173,7 +257,8 @@ export interface Piles {
   exhaust: CardInstance[];
 }
 
-export type CombatPhase = 'playerTurn' | 'won' | 'lost';
+/** `fled`: a creature escaped, ending the fight with no reward. */
+export type CombatPhase = 'playerTurn' | 'won' | 'lost' | 'fled';
 
 export interface CombatState {
   seed: number;

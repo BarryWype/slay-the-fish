@@ -16,6 +16,15 @@ const props = withDefaults(
 
 const TYPE_ICON: Record<CardDef['type'], string> = { attack: '⚔️', skill: '🛡️', power: '✨' };
 const text = computed(() => props.description ?? describeCard(props.card));
+/** Rules text longer than this gets a smaller font so it stays inside the card. */
+const LONG_TEXT = 85;
+/** Splits out "5 (9)" pairs (printed amount, real amount) so the real one can be coloured. */
+const parts = computed(() =>
+  text.value.split(/(\d+ \(\d+\))/).map((part) => {
+    const match = /^(\d+) \((\d+)\)$/.exec(part);
+    return match ? { base: match[1], real: match[2], up: Number(match[2]) > Number(match[1]) } : { text: part };
+  }),
+);
 </script>
 
 <template>
@@ -29,7 +38,14 @@ const text = computed(() => props.description ?? describeCard(props.card));
     <span class="name">{{ card.name }}</span>
     <span class="art">{{ card.art ?? TYPE_ICON[card.type] }}</span>
     <span class="type">{{ card.type }}</span>
-    <span class="desc">{{ text }}</span>
+    <span class="desc" :class="{ long: text.length > LONG_TEXT }">
+      <span>
+        <template v-for="(part, i) in parts" :key="i">
+          <template v-if="'real' in part">{{ part.base }} <b class="real" :class="part.up ? 'up' : 'down'">({{ part.real }})</b></template>
+          <template v-else>{{ part.text }}</template>
+        </template>
+      </span>
+    </span>
     <span v-if="effective" class="effective-badge">Effective!</span>
   </button>
 </template>
@@ -96,6 +112,7 @@ const text = computed(() => props.description ?? describeCard(props.card));
   color: var(--muted);
 }
 .desc { flex: 1; display: grid; place-items: center; font-size: 0.78rem; line-height: 1.25; }
+.desc.long { font-size: 0.66rem; line-height: 1.2; }
 
 .card.effective { box-shadow: 0 0 0 2px #7be38f, 0 0 16px rgb(123 227 143 / 0.55), 0 4px 10px rgb(0 0 0 / 0.4); }
 .effective-badge {
@@ -113,4 +130,7 @@ const text = computed(() => props.description ?? describeCard(props.card));
   text-transform: uppercase;
   white-space: nowrap;
 }
+.real { font-weight: 800; }
+.real.up { color: #7ee08a; }
+.real.down { color: #ff8a80; }
 </style>

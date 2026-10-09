@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { Combatant, IntentPreview, SpriteRef } from '../engine';
+import { isAlive, type Combatant, type IntentPreview, type SpriteRef } from '../engine';
 import AnimatedSprite from './AnimatedSprite.vue';
 import HealthBar from './HealthBar.vue';
 import IntentBadge from './IntentBadge.vue';
 import SpriteView from './SpriteView.vue';
+import PanicBar from './PanicBar.vue';
 import StatusList from './StatusList.vue';
 import type { AnimationClip } from './sprites';
 
@@ -20,16 +21,18 @@ withDefaults(
     targetable?: boolean;
     /** Small line under the name, e.g. the creature type. */
     subtitle?: string;
+    /** Escape bar, for creatures. */
+    escapeBar?: { escape: number; escapeAt: number; escapeRate: number };
   }>(),
-  { clip: undefined, animationKey: 0, sprite: undefined, intent: null, subtitle: undefined },
+  { clip: undefined, animationKey: 0, sprite: undefined, intent: null, subtitle: undefined, escapeBar: undefined },
 );
 defineEmits<{ select: []; animationDone: [] }>();
 </script>
 
 <template>
-  <div class="combatant" :class="{ dead: combatant.hp <= 0, animated: !!clip, targetable }" @click="$emit('select')">
+  <div class="combatant" :class="{ dead: !isAlive(combatant), animated: !!clip, targetable }" @click="$emit('select')">
     <div class="intent-slot">
-      <IntentBadge v-if="intent && combatant.hp > 0" :intent="intent" />
+      <IntentBadge v-if="intent && isAlive(combatant)" :intent="intent" />
     </div>
     <div class="portrait">
       <AnimatedSprite
@@ -45,6 +48,7 @@ defineEmits<{ select: []; animationDone: [] }>();
     </div>
     <div class="name">{{ combatant.name }}</div>
     <div v-if="subtitle" class="subtitle">{{ subtitle }}</div>
+    <PanicBar v-if="escapeBar" v-bind="escapeBar" />
     <HealthBar :hp="combatant.hp" :max-hp="combatant.maxHp" :block="combatant.block" />
     <StatusList :statuses="combatant.statuses" />
   </div>

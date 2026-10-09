@@ -4,7 +4,7 @@ import { isDebuff, STATUS_META, type StatusId, type Statuses } from '../engine';
 
 const props = defineProps<{ statuses: Statuses }>();
 
-const ICONS: Record<StatusId, string> = { strength: '💪', vulnerable: '💔', weak: '🥀' };
+const ICONS: Record<StatusId, string> = { strength: '💪', vulnerable: '💔', weak: '🥀', snared: '🕸️' };
 const entries = computed(() => Object.entries(props.statuses) as Array<[StatusId, number]>);
 </script>
 
