@@ -2,3 +2,5 @@ node_modules
 dist
 *.log
 .vite
+release
+.DS_Store
