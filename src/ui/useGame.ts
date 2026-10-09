@@ -1,4 +1,4 @@
-import { ref, shallowRef } from 'vue';
+import { ref, shallowRef, watch } from 'vue';
 import { gameData } from '../content';
 import {
   addCardToDeck,
@@ -19,8 +19,9 @@ import {
   type RunState,
   type ShopVisit,
 } from '../engine';
+import { clearSavedGame, loadSavedGame, SAVE_VERSION, writeSavedGame, type SavedGame } from './saveStore';
 
-export type Screen = 'build' | 'map' | 'combat' | 'event' | 'shop' | 'reward' | 'complete';
+export type Screen = 'menu' | 'build' | 'map' | 'combat' | 'event' | 'shop' | 'reward' | 'complete';
 
 /**
  * Thin glue between Vue and the engine: holds the current immutable states in
@@ -31,12 +32,54 @@ export function useGame(initialSeed: number) {
   /** null until a starting build is chosen. */
   const run = shallowRef<RunState | null>(null);
   const combat = shallowRef<CombatState | null>(null);
-  const screen = ref<Screen>('build');
+  const screen = ref<Screen>('menu');
   const rewardChoices = ref<string[]>([]);
   /** The event being played, on the event screen. */
   const eventId = ref<string | null>(null);
   /** Purchases during the current shop visit, on the shop screen. */
   const shopVisit = ref<ShopVisit>({ bought: {} });
+  /** The run that Resume would pick up, if any. */
+  const savedGame = shallowRef<SavedGame | null>(null);
+  loadSavedGame().then((save) => (savedGame.value = save));
+
+  // Autosave after every change; a lost or finished run deletes the save.
+  watch([run, combat, screen, rewardChoices, eventId, shopVisit], () => {
+    if (!run.value || screen.value === 'menu' || screen.value === 'build') return;
+    if (screen.value === 'complete' || combat.value?.phase === 'lost') {
+      savedGame.value = null;
+      clearSavedGame();
+      return;
+    }
+    savedGame.value = {
+      version: SAVE_VERSION,
+      seed: seed.value,
+      screen: screen.value,
+      run: run.value,
+      combat: combat.value,
+      rewardChoices: rewardChoices.value,
+      eventId: eventId.value,
+      shopVisit: shopVisit.value,
+    };
+    writeSavedGame(savedGame.value);
+  });
+
+  /** Pick the saved run up exactly where it was left. */
+  function resume() {
+    const save = savedGame.value;
+    if (!save) return;
+    seed.value = save.seed;
+    run.value = save.run;
+    combat.value = save.combat;
+    rewardChoices.value = save.rewardChoices;
+    eventId.value = save.eventId;
+    shopVisit.value = save.shopVisit;
+    screen.value = save.screen;
+  }
+
+  /** Back to the landing menu; the run stays saved. */
+  function toMenu() {
+    screen.value = 'menu';
+  }
 
   function newRun(newSeed: number) {
     seed.value = newSeed;
@@ -159,5 +202,8 @@ export function useGame(initialSeed: number) {
     leaveShop,
     sell,
     newRun,
+    savedGame,
+    resume,
+    toMenu,
   };
 }

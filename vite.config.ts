@@ -7,6 +7,8 @@ import vue from '@vitejs/plugin-vue';
 const wslOnWindowsDrive = !!process.env.WSL_DISTRO_NAME && process.cwd().startsWith('/mnt/');
 
 export default defineConfig({
+  // Relative asset paths, so the build also works when Electron opens it from disk.
+  base: './',
   plugins: [vue()],
   server: {
     watch: wslOnWindowsDrive ? { usePolling: true, interval: 300 } : undefined,

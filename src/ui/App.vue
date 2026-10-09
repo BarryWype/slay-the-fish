@@ -4,6 +4,7 @@ import BuildSelect from './BuildSelect.vue';
 import CombatView from './CombatView.vue';
 import EventScreen from './EventScreen.vue';
 import MapView from './MapView.vue';
+import MenuScreen from './MenuScreen.vue';
 import RewardScreen from './RewardScreen.vue';
 import ShopScreen from './ShopScreen.vue';
 import { useGame } from './useGame';
@@ -20,18 +21,25 @@ function initialSeed() {
 }
 
 const game = useGame(initialSeed());
-const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit } = game;
+const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit, savedGame } = game;
 
 function newRun() {
   game.newRun(randomSeed());
+}
+
+/** The first run from the menu honours `?seed=`; later ones are random. */
+let firstRun = true;
+function newRunFromMenu() {
+  game.newRun(firstRun ? initialSeed() : randomSeed());
+  firstRun = false;
 }
 </script>
 
 <template>
   <header class="topbar">
     <h1>Spire Slice</h1>
-    <div class="run-info">
-      <template v-if="run">
+    <div v-if="screen !== 'menu'" class="run-info">
+      <template v-if="run && screen !== 'build'">
         <span>{{ data.builds[run.build]?.name }}</span>
         <span>Floor {{ run.floor }}</span>
         <span>❤️ {{ combat?.player.hp ?? run.hp }}/{{ run.maxHp }}</span>
@@ -39,12 +47,14 @@ function newRun() {
         <span>🂠 Deck {{ run.deck.length }}</span>
       </template>
       <span class="seed" title="Open with ?seed=N in the URL to replay this run">Seed {{ seed }}</span>
+      <button class="ghost" @click="game.toMenu">Menu</button>
       <button class="ghost" @click="newRun">New run</button>
     </div>
   </header>
 
   <main>
-    <BuildSelect v-if="screen === 'build' || !run" :data="data" @choose="game.chooseBuild" />
+    <MenuScreen v-if="screen === 'menu'" :can-resume="!!savedGame" @resume="game.resume" @new-run="newRunFromMenu" />
+    <BuildSelect v-else-if="screen === 'build' || !run" :data="data" @choose="game.chooseBuild" />
     <div v-else-if="screen === 'map'" class="map-layout">
       <MapView :run="run" :data="data" @travel="game.travel" />
       <Aquarium class="aquarium" :captured="run.captured" :data="data" @sell="game.sell" />
