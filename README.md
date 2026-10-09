@@ -2,6 +2,22 @@
 
 A vertical slice of a Slay the Spire–style deck-building roguelike, built with TypeScript, Vite, Vue 3 and Vitest. It uses no game framework.
 
+## Download
+
+Desktop app, always the latest version:
+
+- [macOS (Apple Silicon)](https://github.com/BarryWype/slay-the-fish/releases/latest/download/slay-the-fish-mac-arm64.dmg)
+- [Windows](https://github.com/BarryWype/slay-the-fish/releases/latest/download/slay-the-fish-windows.exe)
+- [Linux (AppImage)](https://github.com/BarryWype/slay-the-fish/releases/latest/download/slay-the-fish-linux.AppImage)
+
+Older versions are on the [releases page](https://github.com/BarryWype/slay-the-fish/releases).
+
+The app isn't code-signed yet, so the first launch shows a warning:
+
+- **macOS**: right-click the app and choose **Open**, then **Open** again.
+- **Windows**: on the SmartScreen prompt, click **More info**, then **Run anyway**.
+- **Linux**: make the file executable (`chmod +x slay-the-fish-linux.AppImage`), then run it.
+
 ## Running it
 
 Requires Node.js 20+ (the version is pinned in `.nvmrc`). With nvm, just run `nvm install` (or `nvm use`) in the project folder.

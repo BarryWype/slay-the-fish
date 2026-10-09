@@ -46,13 +46,16 @@
     ],
     "mac": {
       "target": "dmg",
-      "identity": null
+      "identity": null,
+      "artifactName": "slay-the-fish-mac-${arch}.${ext}"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "artifactName": "slay-the-fish-windows.${ext}"
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "artifactName": "slay-the-fish-linux.${ext}"
     }
   }
 }
