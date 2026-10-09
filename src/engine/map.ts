@@ -85,9 +85,7 @@ export function generateMap(holder: RngHolder, data: GameData, columnCount = MAP
   const maxTier = Math.max(...data.encounters.map(encounterTier));
   const columns: MapNode[][] = lanes.map((occupied, column) => {
     const tier = tierForColumn(column, columnCount, maxTier);
-    // Every type with a fight at this depth is equally likely.
-    const tierPool = data.encounters.filter((e) => encounterTier(e) === tier);
-    const types = [...new Set((tierPool.length ? tierPool : data.encounters).map((e) => encounterType(e, data)))];
+    const types = typesAtTier(tier, data);
     return [...occupied]
       .sort((a, b) => a - b)
       .map((lane, row) => ({
@@ -153,6 +151,12 @@ function crosses(edges: Set<string>, a: number, b: number): boolean {
 
 export function encounterTier(encounter: EncounterDef): number {
   return encounter.tier ?? 1;
+}
+
+/** Creature types with a fight at this depth tier (all of them if none); each is equally likely on the map. */
+export function typesAtTier(tier: number, data: GameData): string[] {
+  const tierPool = data.encounters.filter((e) => encounterTier(e) === tier);
+  return [...new Set((tierPool.length ? tierPool : data.encounters).map((e) => encounterType(e, data)))];
 }
 
 /** An encounter's creature type: its first enemy's. */

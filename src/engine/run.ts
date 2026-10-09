@@ -1,7 +1,7 @@
 import { createCombat } from './combat';
 import { instantSaleValue } from './equipment';
-import { encountersFor, findNode, generateMap, type GameMap, type MapNode } from './map';
-import { nextInt, shuffleInPlace } from './rng';
+import { encountersFor, findNode, generateMap, typesAtTier, type GameMap, type MapNode } from './map';
+import { nextFloat, nextInt, shuffleInPlace } from './rng';
 import type { CombatState, GameData } from './types';
 import { clone } from './util';
 
@@ -28,6 +28,8 @@ export interface RunState {
 }
 
 export const CARD_REWARD_COUNT = 3;
+/** Chance that an event turns out to be an ordinary fight. */
+export const EVENT_FIGHT_CHANCE = 0.1;
 export const START_NODE_ID = '0-0';
 
 /** Start a run with the chosen build's starter deck. The map depends only on the seed. */
@@ -76,11 +78,18 @@ function moveTo(run: RunState, nodeId: string, kind: MapNode['kind']): { next: R
 /** Move to an adjacent fight and start it. Throws if the node isn't a reachable fight. */
 export function travelTo(run: RunState, nodeId: string, data: GameData): { run: RunState; combat: CombatState } {
   const { next, node } = moveTo(run, nodeId, 'fight');
-  // The creature waiting here is only decided on arrival.
+  return { run: next, combat: startFight(next, node, data) };
+}
+
+/**
+ * Start the fight at `node` (advancing `next`'s RNG): an encounter of its creature
+ * type and tier, which is only decided on arrival.
+ */
+function startFight(next: RunState, node: MapNode, data: GameData): CombatState {
   const pool = encountersFor(node, data);
   const encounter = pool[nextInt(next, 0, pool.length - 1)];
   const combatSeed = nextInt(next, 0, 0x7fffffff);
-  const combat = createCombat(
+  return createCombat(
     {
       seed: combatSeed,
       deck: next.deck,
@@ -91,12 +100,24 @@ export function travelTo(run: RunState, nodeId: string, data: GameData): { run: 
     },
     data,
   );
-  return { run: next, combat };
 }
 
-/** Move to an adjacent event; which one happens is drawn on arrival, among those allowed at that column. */
-export function visitEvent(run: RunState, nodeId: string, data: GameData): { run: RunState; eventId: string } {
+/**
+ * Move to an adjacent event. With `EVENT_FIGHT_CHANCE` it's an ordinary fight against a
+ * creature type found at that depth; otherwise the event is drawn among those allowed at
+ * that column.
+ */
+export function visitEvent(
+  run: RunState,
+  nodeId: string,
+  data: GameData,
+): { run: RunState; eventId: string; combat?: undefined } | { run: RunState; combat: CombatState; eventId?: undefined } {
   const { next, node } = moveTo(run, nodeId, 'event');
+  if (nextFloat(next) < EVENT_FIGHT_CHANCE) {
+    const types = typesAtTier(node.tier, data);
+    const fightNode = { ...node, creatureType: types[nextInt(next, 0, types.length - 1)] };
+    return { run: next, combat: startFight(next, fightNode, data) };
+  }
   const ids = Object.values(data.events)
     .filter((e) => node.column >= (e.minColumn ?? 0))
     .map((e) => e.id);

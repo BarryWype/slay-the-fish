@@ -4,6 +4,7 @@ import {
   applyEventChoice,
   buyShopItem,
   CHOKE_COLUMNS,
+  EVENT_FIGHT_CHANCE,
   eventChoiceBlocked,
   escapeRateReduction,
   availableDestinations,
@@ -215,11 +216,25 @@ describe('events', () => {
     const late = { ...data.events.spot, id: 'late', minColumn: 5 };
     const run = eventNode(createRun(5, data, 'basic'));
     const target = run.map.columns[1][0];
-    for (let seed = 1; seed <= 20; seed++) {
+    for (let seed = 1; seed <= 40; seed++) {
       const withLate = { ...data, events: { spot: data.events.spot, late } };
-      expect(visitEvent({ ...run, rng: seed }, target.id, withLate).eventId).toBe('spot');
+      const visit = visitEvent({ ...run, rng: seed }, target.id, withLate);
+      if (!visit.combat) expect(visit.eventId).toBe('spot');
+      // With nothing allowed here, only the surprise fight can happen.
+      const onlyLate = () => visitEvent({ ...run, rng: seed }, target.id, { ...data, events: { late } });
+      if (!visit.combat) expect(onlyLate).toThrow();
     }
-    expect(() => visitEvent(run, target.id, { ...data, events: { late } })).toThrow();
+  });
+
+  it('about 10% of events turn out to be an ordinary fight', () => {
+    const run = eventNode(createRun(5, data, 'basic'));
+    const target = run.map.columns[1][0];
+    const visits = Array.from({ length: 1000 }, (_, seed) => visitEvent({ ...run, rng: seed }, target.id, data));
+    const fights = visits.filter((v) => v.combat);
+    expect(fights.length / visits.length).toBeGreaterThan(EVENT_FIGHT_CHANCE - 0.03);
+    expect(fights.length / visits.length).toBeLessThan(EVENT_FIGHT_CHANCE + 0.03);
+    for (const v of fights) expect(v.combat!.enemies.map((e) => e.defId)).toEqual(['dummy']);
+    expect(visits.every((v) => v.run.position === target.id)).toBe(true);
   });
 
   it('blocks choices that cannot be paid for', () => {

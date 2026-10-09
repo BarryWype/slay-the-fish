@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { availableDestinations, MAP_LANES, type GameData, type MapNode, type RunState } from '../engine';
+import { cellOf, SHEETS } from './sprites';
 
 const props = defineProps<{ run: RunState; data: GameData }>();
 const emit = defineEmits<{ travel: [nodeId: string] }>();
@@ -9,6 +10,8 @@ const emit = defineEmits<{ travel: [nodeId: string] }>();
 const PADDING = 40;
 const HEIGHT = 390;
 const RADIUS = 24;
+/** Terrain patches are drawn at exactly 2x so their pixels stay crisp. */
+const PATCH = 80;
 
 const scroller = ref<HTMLElement>();
 const viewportWidth = ref(800);
@@ -84,6 +87,20 @@ function label(node: MapNode) {
   return props.data.creatureTypes[node.creatureType]?.icon ?? '⚔️';
 }
 
+/** The terrain patch under a fight (an SVG viewport onto the terrain sheet), if its type has one. */
+function terrain(node: MapNode) {
+  const sprite = node.creatureType ? props.data.creatureTypes[node.creatureType]?.terrain : undefined;
+  const sheet = sprite && SHEETS[sprite.sheet];
+  if (!sprite || !sheet) return null;
+  const { column, row } = cellOf(sheet, sprite.index);
+  return {
+    url: sheet.url,
+    viewBox: `${column * sheet.cell} ${row * sheet.cell} ${sheet.cell} ${sheet.cell}`,
+    width: sheet.columns * sheet.cell,
+    height: sheet.rows * sheet.cell,
+  };
+}
+
 /** Hover text: what the node is, plus a hint when the build is strong against its creatures. */
 function tooltipFor(node: MapNode): { name: string; hint?: string } {
   if (node.kind === 'start') return { name: props.data.character.home.name };
@@ -123,6 +140,22 @@ function choose(node: MapNode) {
 
     <div ref="scroller" class="map-scroll" @scroll="scrollLeft = scroller?.scrollLeft ?? 0">
       <svg class="map" :width="width" :height="HEIGHT" :viewBox="`0 0 ${width} ${HEIGHT}`" role="group" aria-label="Map">
+        <g class="terrain" aria-hidden="true">
+          <template v-for="node in columns.flat()" :key="node.id">
+            <svg
+              v-if="terrain(node)"
+              class="patch"
+              :class="nodeState(node)"
+              :x="x(node) - PATCH / 2"
+              :y="y(node) - PATCH / 2"
+              :width="PATCH"
+              :height="PATCH"
+              :viewBox="terrain(node)!.viewBox"
+            >
+              <image :href="terrain(node)!.url" :width="terrain(node)!.width" :height="terrain(node)!.height" />
+            </svg>
+          </template>
+        </g>
         <line
           v-for="e in edges"
           :key="e.key"
@@ -137,7 +170,7 @@ function choose(node: MapNode) {
           v-for="node in columns.flat()"
           :key="node.id"
           class="node"
-          :class="[nodeState(node), { strong: isStrong(node), event: node.kind === 'event', shop: node.kind === 'shop' }]"
+          :class="[nodeState(node), { strong: isStrong(node), event: node.kind === 'event', shop: node.kind === 'shop', 'on-terrain': !!terrain(node) }]"
           :transform="`translate(${x(node)} ${y(node)})`"
           :role="destinations.has(node.id) ? 'button' : undefined"
           :tabindex="destinations.has(node.id) ? 0 : undefined"
@@ -236,10 +269,18 @@ function choose(node: MapNode) {
 .edge.open { opacity: 1; }
 .edge.open { stroke: var(--highlight); stroke-dasharray: none; }
 
+/* Terrain sits under links and nodes, and fades with its node. */
+.patch { image-rendering: pixelated; }
+.patch.locked { opacity: 0.55; }
+.patch.skipped, .patch.visited { opacity: 0.3; }
 .node circle { fill: #23262f; stroke: #4a4f5c; stroke-width: 3; }
 .node text { font-size: 20px; fill: var(--text); user-select: none; }
 /* Creature types the run's build is strong against get a green tint. */
 .node.strong circle { fill: #1f3a2a; }
+/* Fights let their terrain show through; the icon gets a shadow to stay readable on it. */
+.node.on-terrain circle { fill: rgb(20 24 32 / 0.25); }
+.node.on-terrain.strong circle { fill: rgb(31 58 42 / 0.45); }
+.node.on-terrain text { filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.8)); }
 .node.event circle { fill: #2e2a3d; }
 .node.shop circle { fill: #3d3422; }
 

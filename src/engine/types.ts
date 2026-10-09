@@ -144,6 +144,8 @@ export interface CreatureTypeDef {
   name: string;
   /** Placeholder art (emoji) for map events of this type. Display-only. */
   icon?: string;
+  /** Terrain patch drawn under map fights of this type. Display-only. */
+  terrain?: SpriteRef;
 }
 
 export interface EnemyMove {

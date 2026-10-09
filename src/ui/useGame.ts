@@ -62,8 +62,13 @@ export function useGame(initialSeed: number) {
     if (kind === 'event') {
       const visit = visitEvent(run.value, nodeId, gameData);
       run.value = visit.run;
-      eventId.value = visit.eventId;
-      screen.value = 'event';
+      if (visit.combat) {
+        combat.value = visit.combat;
+        screen.value = 'combat';
+      } else {
+        eventId.value = visit.eventId;
+        screen.value = 'event';
+      }
       return;
     }
     const result = travelTo(run.value, nodeId, gameData);

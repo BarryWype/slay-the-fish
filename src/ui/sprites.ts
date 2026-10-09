@@ -4,6 +4,7 @@ import playerHurtUrl from './assets/Fisherman_hurt.png';
 import fishesUrl from './assets/fishes.png';
 import gearUrl from './assets/fishing_gear.png';
 import objectsUrl from './assets/objects.png';
+import terrainUrl from './assets/terrain.png';
 
 export interface SpriteSheet {
   url: string;
@@ -18,6 +19,8 @@ export const SHEETS: Record<string, SpriteSheet> = {
   fishes: { url: fishesUrl, columns: 12, rows: 12, cell: 32 },
   gear: { url: gearUrl, columns: 6, rows: 6, cell: 32 },
   objects: { url: objectsUrl, columns: 5, rows: 4, cell: 32 },
+  /** Map terrain patches, made by `npm run terrain`. */
+  terrain: { url: terrainUrl, columns: 9, rows: 1, cell: 40 },
 };
 
 /** One animation: a row of square frames in a sheet. Looping clips repeat; others hold their last frame. */

@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.engine.json",
     "sprites": "node scripts/generate-creature-sprites.mjs",
+    "terrain": "node scripts/generate-map-terrain.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
