@@ -28,6 +28,12 @@ export const STATUS_META: Record<StatusId, StatusMeta> = {
     kind: 'debuff',
     decays: true,
   },
+  poison: {
+    name: 'Poison',
+    description: 'Loses that much HP at the end of its turn, ignoring Block. Decreases at end of turn.',
+    kind: 'debuff',
+    decays: true,
+  },
   snared: {
     name: 'Snared',
     description: `Its ${ESCAPE_BAR_NAME} doesn't rise. Decreases at end of turn.`,
@@ -50,8 +56,9 @@ export function addStatus(combatant: Combatant, id: StatusId, amount: number): v
   }
 }
 
-/** End-of-turn upkeep for one combatant. */
+/** End-of-turn upkeep for one combatant: Poison hits, then durations count down. */
 export function tickStatuses(combatant: Combatant): void {
+  combatant.hp = Math.max(0, combatant.hp - getStatus(combatant, 'poison'));
   for (const id of Object.keys(combatant.statuses) as StatusId[]) {
     if (STATUS_META[id].decays) addStatus(combatant, id, -1);
   }

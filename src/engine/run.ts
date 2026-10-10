@@ -1,5 +1,6 @@
 import { createCombat } from './combat';
-import { instantSaleValue } from './equipment';
+import { bonusTotal, companionEffects } from './companions';
+import { instantSaleValue, saleValue } from './equipment';
 import { encountersFor, findNode, generateMap, typesAtTier, type GameMap, type MapNode } from './map';
 import { nextFloat, nextInt, shuffleInPlace } from './rng';
 import type { CombatState, GameData } from './types';
@@ -25,6 +26,12 @@ export interface RunState {
    * (duplicates allowed). It only reaches the home aquarium if the run is won (`bringCatchHome`).
    */
   bucket: string[];
+  /**
+   * The creatures brought from the home aquarium, which give their companion bonus. Always the
+   * first entries of `bucket`, in the same order (captures are added after them, and selling one
+   * removes it from both).
+   */
+  companions: string[];
   coins: number;
   /** Equipment ids carried this run. */
   equipment: string[];
@@ -34,11 +41,18 @@ export const CARD_REWARD_COUNT = 3;
 /** Chance that an event turns out to be an ordinary fight. */
 export const EVENT_FIGHT_CHANCE = 0.1;
 export const START_NODE_ID = '0-0';
+/** How many home-aquarium creatures the player can bring along in the bucket. */
+export const SESSION_SLOTS = 3;
 
-/** Start a run with the chosen build's starter deck. The map depends only on the seed. */
-export function createRun(seed: number, data: GameData, buildId: string, maxHp = data.character.maxHp): RunState {
+/**
+ * Start a run with the chosen build's starter deck, and `brought` (creatures taken from the
+ * home aquarium, see `takeFromHome`) already in the bucket. The map depends only on the seed.
+ */
+export function createRun(seed: number, data: GameData, buildId: string, brought: readonly string[] = []): RunState {
   const build = data.builds[buildId];
   if (!build) throw new Error(`Unknown build "${buildId}"`);
+  if (brought.length > SESSION_SLOTS) throw new Error(`Can't bring more than ${SESSION_SLOTS} creatures`);
+  const maxHp = data.character.maxHp + bonusTotal(companionEffects(brought, data), 'bonusMaxHp');
   const run: RunState = {
     seed,
     rng: seed | 0,
@@ -50,7 +64,8 @@ export function createRun(seed: number, data: GameData, buildId: string, maxHp =
     map: { columns: [] },
     position: START_NODE_ID,
     visited: [START_NODE_ID],
-    bucket: [],
+    bucket: [...brought],
+    companions: [...brought],
     coins: 0,
     equipment: [...(build.startingEquipment ?? [])],
   };
@@ -100,6 +115,7 @@ function startFight(next: RunState, node: MapNode, data: GameData): CombatState 
       playerHp: next.hp,
       playerMaxHp: next.maxHp,
       equipment: next.equipment,
+      bonuses: companionEffects(next.companions, data),
     },
     data,
   );
@@ -144,25 +160,41 @@ export function visitShop(run: RunState, nodeId: string): RunState {
  */
 export function finishCombat(run: RunState, combat: CombatState, data: GameData): RunState {
   const next = { ...clone(run), hp: Math.max(0, combat.player.hp) };
+  if (combat.phase === 'lost') return next;
+  next.hp = Math.min(next.maxHp, next.hp + bonusTotal(combat.bonuses, 'healAfterFight'));
   if (combat.phase !== 'won') return next;
   next.floor++;
+  const sellBonus = bonusTotal(combat.bonuses, 'sellBonus');
   for (const enemy of combat.enemies) {
-    const sale = instantSaleValue(enemy.defId, run.equipment, data);
+    const sale = instantSaleValue(enemy.defId, run.equipment, data, sellBonus);
     if (sale === null) next.bucket.push(enemy.defId);
     else next.coins += sale;
   }
   return next;
 }
 
-/** Sell the bucket's creature at index `slot` for its sell value. */
+/** Sell the bucket's creature at index `slot` for its sell value (plus companion sell bonuses). */
 export function sellCreature(run: RunState, slot: number, data: GameData): RunState {
   const id = run.bucket[slot];
   if (id === undefined) throw new Error(`Nothing captured at slot ${slot}`);
+  const sellBonus = bonusTotal(companionEffects(run.companions, data), 'sellBonus');
   return {
     ...clone(run),
     bucket: run.bucket.filter((_, i) => i !== slot),
-    coins: run.coins + (data.enemies[id]?.sellValue ?? 0),
+    companions: run.companions.filter((_, i) => i !== slot),
+    coins: run.coins + saleValue(id, sellBonus, data),
   };
+}
+
+/** The home aquarium without the creatures brought for a run: one copy removed per id. */
+export function takeFromHome(home: readonly string[], brought: readonly string[]): string[] {
+  const rest = [...home];
+  for (const id of brought) {
+    const at = rest.indexOf(id);
+    if (at < 0) throw new Error(`No "${id}" in the home aquarium`);
+    rest.splice(at, 1);
+  }
+  return rest;
 }
 
 /**

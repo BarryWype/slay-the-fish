@@ -34,7 +34,7 @@ menu ──New run──▶ build ──Select──▶ map ──▶ fight ─�
 ```
 
 - **Menu:** Resume (disabled without a save), New run, See aquarium, Exit (desktop app only). A small **Reset progression** button (bottom right, after a confirmation) deletes both the save and the profile (`resetProgress`). The menu's background is the home aquarium. A 📖 tab on the right edge (menu and See aquarium view) opens the creature book (`CreatureBook.vue`): a drawer listing every creature. Creatures never encountered show as **?**. The others show their image, their status (Seen or Captured), and how many are in the home aquarium.
-- **Build selection:** one tile per build. The image opens a details dialog (description, strong-against types, starter deck, equipment). The home aquarium fills the bottom half of the screen.
+- **Build selection:** one tile per build. The image opens a details dialog (description, strong-against types, starter deck, equipment). The home aquarium fills the bottom half of the screen, with three session slots (`SessionSlots.vue`) on its right: clicking a creature offers **Bring for the session**, and ✕ puts it back.
 
 ## A run
 
@@ -63,7 +63,7 @@ menu ──New run──▶ build ──Select──▶ map ──▶ fight ─�
 
 - **Turns:**
   - **Start of the turn:** block resets, energy refills and you draw 5 cards.
-  - **End of the turn:** the hand is discarded and statuses tick. Each enemy then acts on its shown intent and its escape bar rises.
+  - **End of the turn:** the hand is discarded and statuses tick (**Poison** deals its stacks as damage, ignoring Block, then decreases). Each enemy then acts on its shown intent and its escape bar rises.
   - **Win/lose check:** after every effect.
 - **Escape bar** (shown to the player as **Panic**, name in `ESCAPE_BAR_NAME`). Each creature has:
   - **`escape`:** the bar, which starts at `escapeStart`.
@@ -88,10 +88,10 @@ There are two separate collections of creatures. They never share creatures, exc
 | Where in code | `RunState.bucket` | `Profile.homeAquarium` (`ui/saveStore.ts`) |
 | Saved in | `save.json` (with the run) | `profile.json` (lasts forever) |
 | Shown | Below the map (🪣 Bucket) | Menu background, build selection (🏠 Home aquarium) |
-| Interactive | Yes: click a creature to sell it for coins | View-only, for now |
+| Interactive | Yes: click a creature to sell it for coins | On the build screen only: click a creature to bring it for the session |
 
 **Lifecycle:**
-1. **New run:** the bucket starts empty. The home aquarium is unchanged.
+1. **New run:** on the build screen the player can pick up to `SESSION_SLOTS` (3) home-aquarium creatures (`useGame` `brought`). When the build is chosen, `takeFromHome` removes them from the home aquarium (and the profile is written), and `createRun` starts the bucket with them. They follow the bucket's rules from then on, so they're lost if the run is.
 2. **During the run:**
    - **Captures:** captured creatures go into the bucket. With **Sharp Spear** they're sold on the spot instead and never reach it.
    - **Selling:** the player can sell creatures from the bucket at any time.
@@ -110,6 +110,24 @@ There are two separate collections of creatures. They never share creatures, exc
 
 Anything meant to last between runs (score, unlocks, statistics) belongs in the **profile**, never in `RunState`.
 
+## Companions: bonuses from brought creatures
+
+Creatures brought from the home aquarium on the build screen (`RunState.companions`, always the first entries of the bucket) give a bonus from their **temperament** for the whole run. Creatures captured during the run are **angry** (💢 in the bucket) and give nothing. Selling a companion ends its bonus; the max HP it gave stays.
+
+- **Content:** `content/companions.ts`, one `CompanionBonusDef` per temperament. `effects` hold the amounts for one species; `fullSchool` is the extra at 3 species.
+- **Scaling** (`engine/companions.ts`, `activeBonuses`): only **different species** count, so two Clownfish are one reef fish.
+  - 1 species: the amounts as written.
+  - 2 species: doubled (`COMPANION_SCALE_CAP`).
+  - 3 species (`FULL_SCHOOL`): still doubled, plus the `fullSchool` effects.
+- **Effects** (`CompanionEffect` in `engine/types.ts`):
+  - **Passive modifiers,** read with `bonusTotal`: bonus Block, kept Block, bonus damage, first-attack damage, dodged attacks, extra Panic reduction, slower escape, max HP, healing after fights, sell bonus.
+  - **Triggered effects,** `{ type: 'trigger', on, effect }`: any card effect, resolved as the player by `fireTriggers` with its numbers as written (no Strength or other bonuses). The triggers are `combatStart`, `firstAttackEachTurn`, `firstAttackEachFight`, `fullBlock`, `hitByEnemy` and `firstBelowHalfHp`. For the attack and hit triggers, `target` means the enemy attacked or attacking. Block from triggers that fire during the enemies' turn lasts into the player's next turn.
+- **Where they apply:**
+  - `createRun` adds the max HP.
+  - `startFight` passes the scaled effects to the fight, which keeps them in `CombatState.bonuses`; the once-per-turn and once-per-fight state lives in `bonusTracker`.
+  - `finishCombat` heals and applies the sell bonus to on-the-spot sales; `sellCreature` applies it to bucket sales.
+- **UI:** the home aquarium shows a creature's bonus before you bring it. The session slots list the combined bonuses. The map shows them next to the equipment, with a tooltip.
+
 ## Persistence
 
 All saving lives in `ui/saveStore.ts`. There are two files, each with its own version number:
@@ -122,12 +140,12 @@ All saving lives in `ui/saveStore.ts`. There are two files, each with its own ve
 - **Where:** in the desktop app, in the app's data folder (`app.getPath('userData')`, e.g. `~/Library/Application Support/Slay the Fish`). In a browser, localStorage under `slay-the-fish:save` and `slay-the-fish:profile`.
 - **Desktop bridge:** `electron/preload.cjs` exposes `window.desktop.readData / writeData / deleteData(name)` and `quit()`. `electron/main.js` only accepts the names in `DATA_FILES`, so the page can't touch any other file.
 - **Safe writes:** a file is written to `name.json.tmp`, then renamed over the real one, so a crash mid-write can't corrupt it. Writes are queued one after another, so an older write can never land after a newer one.
-- **Versions** (`SAVE_VERSION`, currently 2, and `PROFILE_VERSION`, currently 3). When a saved shape changes:
+- **Versions** (`SAVE_VERSION`, currently 3, and `PROFILE_VERSION`, currently 3). When a saved shape changes:
   1. Bump the version.
   2. Convert older files in `upgradeSave` (or the profile's equivalent).
   3. A file that can't be upgraded is ignored rather than crashing: no Resume, or a fresh profile.
 
-  Examples: version 1 saves called the bucket `run.captured`, and `upgradeSave` renames it. Version 1 profiles had no creature book; `upgradeProfile` marks everything in the home aquarium as captured. Version 2 profiles had no eggs.
+  Examples: version 1 saves called the bucket `run.captured`, and `upgradeSave` renames it. Version 2 saves had no companions, so the upgrade adds empty ones (and empty combat bonuses). Version 1 profiles had no creature book; `upgradeProfile` marks everything in the home aquarium as captured. Version 2 profiles had no eggs.
 - **Resume** restores every saved field, so the player returns to the same screen. Mid-fight saves include the hand, energy and Panic.
 
 ## Desktop app and releases
@@ -163,5 +181,6 @@ All saving lives in `ui/saveStore.ts`. There are two files, each with its own ve
 | `STARTING_HAND_SIZE`, `BASE_ENERGY`, `VULNERABLE_MULTIPLIER`, `WEAK_MULTIPLIER` | `engine/constants.ts` | Combat basics |
 | `sellValue`, `escapeAt`, `escapeStart`, `escapeRate`, `temperament`, `tier` | `content/creatures.ts` | Per-creature balance |
 | Item prices and limits | `content/shop.ts` | Shop |
+| Temperament bonuses, `COMPANION_SCALE_CAP`, `FULL_SCHOOL`, `SESSION_SLOTS` | `content/companions.ts`, `engine/companions.ts`, `engine/run.ts` | What brought creatures give, and how it scales |
 
 Percentages in equipment and event effects are whole numbers (20 = 20%), and results are **rounded up**: the Reliable Reel's rate cut, the Sharp Spear's sale bonus, passerby bonuses.

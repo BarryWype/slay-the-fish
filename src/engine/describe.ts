@@ -12,6 +12,8 @@ export interface DescribeOptions {
   defenderTags?: string[];
   /** Display names for tags (creature types) in bonus text. */
   tagNames?: Record<string, string>;
+  /** Extra damage per hit from companion bonuses (`bonusDamage`). */
+  bonusDamage?: number;
 }
 
 /** Human-readable rules text for one effect primitive. */
@@ -21,7 +23,7 @@ export function describeEffect(effect: Effect, opts: DescribeOptions = {}): stri
       const target = effect.target ?? 'target';
       const defender = target === 'target' ? opts.defender : undefined;
       const bonus = bonusAgainst(effect.bonus, target === 'target' ? opts.defenderTags : undefined);
-      const real = calculateDamage(effect.amount + bonus, opts.attacker, defender);
+      const real = calculateDamage(effect.amount + bonus + (opts.bonusDamage ?? 0), opts.attacker, defender);
       // The printed amount, then the real one in brackets when modifiers change it.
       const dmg = real === effect.amount ? `${real}` : `${effect.amount} (${real})`;
       const times = (effect.hits ?? 1) > 1 ? ` ${effect.hits} times` : '';

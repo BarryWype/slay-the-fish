@@ -1,4 +1,4 @@
-import { ref, shallowRef, watch } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 import { gameData } from '../content';
 import {
   addCardToDeck,
@@ -8,6 +8,8 @@ import {
   applyAction,
   bringCatchHome,
   layEggs,
+  SESSION_SLOTS,
+  takeFromHome,
   createRun,
   recordEncounter,
   finishCombat,
@@ -89,6 +91,22 @@ export function useGame(initialSeed: number) {
     creatureBook.value = book;
     saveProfile();
   });
+
+  /** On the build screen: home-aquarium creatures picked to start the run in the bucket. */
+  const brought = ref<string[]>([]);
+  /** The home aquarium minus what's been picked, as the build screen shows it. */
+  const homeLeft = computed(() => takeFromHome(homeAquarium.value, brought.value));
+
+  /** Pick the creature at `slot` of `homeLeft` to bring along, if a session slot is free. */
+  function bring(slot: number) {
+    const id = homeLeft.value[slot];
+    if (id !== undefined && brought.value.length < SESSION_SLOTS) brought.value = [...brought.value, id];
+  }
+
+  /** Put the creature in session slot `index` back in the home aquarium. */
+  function unbring(index: number) {
+    brought.value = brought.value.filter((_, i) => i !== index);
+  }
 
   /** How many eggs were laid when the last run ended, for the end screens. */
   const newEggs = ref(0);
@@ -177,11 +195,19 @@ export function useGame(initialSeed: number) {
     seed.value = newSeed;
     run.value = null;
     combat.value = null;
+    brought.value = [];
     screen.value = 'build';
   }
 
   function chooseBuild(buildId: string) {
-    run.value = createRun(seed.value, gameData, buildId);
+    // The brought creatures leave the home aquarium now: like the rest of the bucket, they only
+    // come back if the run is successful.
+    run.value = createRun(seed.value, gameData, buildId, brought.value);
+    if (brought.value.length) {
+      homeAquarium.value = homeLeft.value;
+      brought.value = [];
+      saveProfile();
+    }
     screen.value = 'map';
   }
 
@@ -327,6 +353,10 @@ export function useGame(initialSeed: number) {
     creatureBook,
     eggs,
     newEggs,
+    brought,
+    homeLeft,
+    bring,
+    unbring,
     hatchEgg,
     runEnd,
     resume,

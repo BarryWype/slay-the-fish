@@ -162,6 +162,7 @@ describe('content validation', () => {
     equipment: [],
     events: [],
     shop: [],
+    companionBonuses: [],
   };
 
   it('accepts valid content', () => {

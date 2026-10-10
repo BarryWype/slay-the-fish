@@ -1,11 +1,12 @@
+import { bonusTotal } from './companions';
 import { BASE_ENERGY, PLAYER_ID, STARTING_HAND_SIZE } from './constants';
 import { equipmentEffects, escapeRateReduction } from './equipment';
-import { isAlive, resolveEffect } from './effects';
+import { fireTriggers, isAlive, resolveEffect } from './effects';
 import { chooseIntent, executeIntent } from './intents';
 import { discardHand, drawCards } from './piles';
 import { nextInt, shuffleInPlace } from './rng';
 import { escapeRise, tickStatuses } from './statuses';
-import type { CombatAction, CombatState, GameData } from './types';
+import type { CombatAction, CombatState, CompanionEffect, GameData } from './types';
 import { addLog, clone } from './util';
 
 export interface CombatConfig {
@@ -18,6 +19,8 @@ export interface CombatConfig {
   playerMaxHp: number;
   /** Equipment ids carried into the fight. */
   equipment?: string[];
+  /** Companion bonuses, already scaled (`companionEffects`). */
+  bonuses?: CompanionEffect[];
 }
 
 export function createCombat(config: CombatConfig, data: GameData): CombatState {
@@ -44,6 +47,8 @@ export function createCombat(config: CombatConfig, data: GameData): CombatState 
       exhaust: [],
     },
     log: [],
+    bonuses: config.bonuses ?? [],
+    bonusTracker: { attacksThisTurn: 0, attacksThisFight: 0, dodged: 0, belowHalf: false, carriedBlock: 0 },
   };
 
   config.enemies.forEach((defId, i) => {
@@ -71,10 +76,16 @@ export function createCombat(config: CombatConfig, data: GameData): CombatState 
     if (effect.type !== 'slowEscape') continue;
     for (const enemy of state.enemies) enemy.escapeRate -= escapeRateReduction(enemy.escapeRate, effect.percent);
   }
+  const companionSlow = bonusTotal(state.bonuses, 'slowEscape');
+  if (companionSlow) {
+    for (const enemy of state.enemies) enemy.escapeRate -= escapeRateReduction(enemy.escapeRate, companionSlow);
+  }
 
   shuffleInPlace(state, state.piles.draw);
   for (const enemy of state.enemies) chooseIntent(state, enemy, data);
   startPlayerTurn(state);
+  fireTriggers(state, 'combatStart');
+  checkCombatEnd(state);
   return state;
 }
 
@@ -130,7 +141,10 @@ export function replayCombat(config: CombatConfig, actions: CombatAction[], data
 
 function startPlayerTurn(state: CombatState): void {
   state.turn++;
-  state.player.block = 0;
+  const kept = bonusTotal(state.bonuses, 'keepBlock') + state.bonusTracker.carriedBlock;
+  state.player.block = Math.min(state.player.block, kept);
+  state.bonusTracker.carriedBlock = 0;
+  state.bonusTracker.attacksThisTurn = 0;
   state.player.energy = state.player.maxEnergy;
   addLog(state, `— Turn ${state.turn} —`);
   drawCards(state, STARTING_HAND_SIZE);
@@ -145,10 +159,30 @@ function playCard(state: CombatState, cardUid: string, targetId: string | undefi
   state.player.energy -= def.cost;
   addLog(state, `${state.player.name} plays ${def.name}.`);
 
-  const ctx = { sourceId: PLAYER_ID, targetId: def.target === 'enemy' ? targetId : undefined };
+  const tracker = state.bonusTracker;
+  const attack = def.type === 'attack';
+  const firstOfTurn = attack && tracker.attacksThisTurn === 0;
+  const firstOfFight = attack && tracker.attacksThisFight === 0;
+  if (attack) {
+    tracker.attacksThisTurn++;
+    tracker.attacksThisFight++;
+  }
+
+  const ctx = {
+    sourceId: PLAYER_ID,
+    targetId: def.target === 'enemy' ? targetId : undefined,
+    damagePercent: firstOfFight ? bonusTotal(state.bonuses, 'firstAttackDamage') : 0,
+  };
   for (const effect of def.effects) {
     resolveEffect(state, effect, ctx);
     if (checkCombatEnd(state)) break;
+  }
+  if (state.phase === 'playerTurn' && (firstOfTurn || firstOfFight)) {
+    // Cards hitting every enemy have no chosen target: the bonus lands on the first one still in.
+    const hit = ctx.targetId ?? state.enemies.find(isAlive)?.id;
+    if (firstOfTurn) fireTriggers(state, 'firstAttackEachTurn', hit);
+    if (firstOfFight) fireTriggers(state, 'firstAttackEachFight', hit);
+    checkCombatEnd(state);
   }
 
   if (def.exhaust || def.type === 'power') state.piles.exhaust.push(card);
@@ -158,6 +192,7 @@ function playCard(state: CombatState, cardUid: string, targetId: string | undefi
 function endTurn(state: CombatState, data: GameData): void {
   discardHand(state);
   tickStatuses(state.player);
+  if (checkCombatEnd(state)) return;
 
   for (const enemy of state.enemies) {
     if (!isAlive(enemy)) continue;
@@ -172,6 +207,8 @@ function endTurn(state: CombatState, data: GameData): void {
     tickStatuses(enemy);
     chooseIntent(state, enemy, data);
   }
+  // Poison can finish a creature off.
+  if (checkCombatEnd(state)) return;
 
   startPlayerTurn(state);
 }

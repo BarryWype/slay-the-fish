@@ -29,6 +29,7 @@ function toEnemy(creature: CreatureDef): EnemyDef {
     startingStatuses: { ...creature.statuses, ...(creature.strength ? { strength: creature.strength } : {}) },
     sprite: { sheet: 'fishes', index: creature.no },
     habitat: creature.habitat ?? HABITAT_BY_TEMPERAMENT[creature.temperament] ?? 'swim',
+    temperament: creature.temperament,
   };
 }
 

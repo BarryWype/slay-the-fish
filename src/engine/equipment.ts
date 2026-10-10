@@ -11,13 +11,18 @@ export function escapeRateReduction(rate: number, percent: number): number {
   return Math.min(rate, Math.max(1, Math.ceil((rate * percent) / 100)));
 }
 
+/** A creature's sell value raised by `percent`, rounded up. */
+export function saleValue(defId: string, percent: number, data: GameData): number {
+  return Math.ceil(((data.enemies[defId]?.sellValue ?? 0) * (100 + percent)) / 100);
+}
+
 /**
  * Coins a captured creature sells for on the spot, or null if no equipment sells
- * on capture (it goes into the bucket instead). Bonuses add up, rounded up.
+ * on capture (it goes into the bucket instead). Bonuses, and `extraPercent` (companions), add up.
  */
-export function instantSaleValue(defId: string, equipment: readonly string[], data: GameData): number | null {
+export function instantSaleValue(defId: string, equipment: readonly string[], data: GameData, extraPercent = 0): number | null {
   const bonuses = equipmentEffects(equipment, data).filter((e) => e.type === 'sellOnCapture');
   if (!bonuses.length) return null;
-  const percent = bonuses.reduce((sum, e) => sum + e.bonusPercent, 0);
-  return Math.ceil(((data.enemies[defId]?.sellValue ?? 0) * (100 + percent)) / 100);
+  const percent = bonuses.reduce((sum, e) => sum + e.bonusPercent, extraPercent);
+  return saleValue(defId, percent, data);
 }

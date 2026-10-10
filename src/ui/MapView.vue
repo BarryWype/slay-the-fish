@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { availableDestinations, MAP_LANES, type GameData, type MapNode, type RunState } from '../engine';
+import { activeBonuses, availableDestinations, describeCompanionEffect, MAP_LANES, type GameData, type MapNode, type RunState } from '../engine';
 import { cellOf, SHEETS } from './sprites';
 
 const props = defineProps<{ run: RunState; data: GameData }>();
@@ -25,6 +25,10 @@ const width = computed(() => PADDING * 2 + (columns.value.length - 1) * columnGa
 const destinations = computed(() => new Set(availableDestinations(props.run).map((n) => n.id)));
 const visited = computed(() => new Set(props.run.visited));
 const equipment = computed(() => props.run.equipment.map((id) => props.data.equipment[id]).filter(Boolean));
+/** Companion bonuses from the creatures brought along, shown next to the equipment. */
+const bonuses = computed(() =>
+  activeBonuses(props.run.companions, props.data).map((b) => ({ ...b, text: b.effects.map(describeCompanionEffect) })),
+);
 const currentColumn = computed(() => Number(props.run.position.split('-')[0]));
 
 /** Keep the current position near the left edge, with the next choices in view. */
@@ -130,12 +134,26 @@ function choose(node: MapNode) {
 
 <template>
   <section class="map-screen">
-    <ul v-if="run.equipment.length" class="equipment" aria-label="Equipment">
+    <ul v-if="equipment.length || bonuses.length" class="equipment" aria-label="Equipment and companion bonuses">
       <li v-for="item in equipment" :key="item.id" class="item" tabindex="0" :aria-label="`${item.name}: ${item.description}`">
         <span class="icon">{{ item.icon ?? '🎒' }}</span>
         <div class="tooltip" role="tooltip">
           <strong>{{ item.name }}</strong>
           <p>{{ item.description }}</p>
+        </div>
+      </li>
+      <li
+        v-for="b in bonuses"
+        :key="b.def.id"
+        class="item companion"
+        tabindex="0"
+        :aria-label="`${b.def.name}: ${b.text.join(' ')}`"
+      >
+        <span class="icon">{{ b.def.icon ?? '🐟' }}</span>
+        <div class="tooltip" role="tooltip">
+          <strong>{{ b.def.name }}</strong>
+          <span class="species">{{ b.species }} {{ b.def.temperamentName }} species brought</span>
+          <p v-for="(line, i) in b.text" :key="i">{{ line }}</p>
         </div>
       </li>
     </ul>
@@ -222,6 +240,8 @@ function choose(node: MapNode) {
 /* Equipment sits over the map's top-left corner and doesn't scroll with it. */
 .equipment { position: absolute; top: 10px; left: 10px; z-index: 2; display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .item { position: relative; }
+.companion .icon { border-color: #2f5a3a; }
+.tooltip .species { display: block; color: var(--muted); font-size: 0.72rem; }
 .item .icon {
   display: grid;
   place-items: center;

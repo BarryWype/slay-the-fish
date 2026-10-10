@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { GameData, Habitat } from '../engine';
+import { describeCompanionEffect, type GameData, type Habitat } from '../engine';
 import AnimatedSprite from './AnimatedSprite.vue';
 import SpriteView from './SpriteView.vue';
 import { animatedSheetFor, creatureClip } from './sprites';
@@ -13,12 +13,21 @@ const props = withDefaults(
     /** Header, e.g. "Bucket" or "Home aquarium". */
     title?: string;
     icon?: string;
-    /** False: just to look at, creatures can't be clicked or sold. */
+    /** False: just to look at, creatures can't be clicked. */
     interactive?: boolean;
+    /** What clicking a creature offers: selling it, or bringing it for the session. */
+    action?: 'sell' | 'bring';
+    /** Why bringing is unavailable right now (e.g. all slots taken), if it is. */
+    bringBlocked?: string;
+    /**
+     * In a run's bucket: the first this-many creatures were brought from home and give their bonus;
+     * the rest were caught and are angry. Omit outside a run.
+     */
+    companions?: number;
   }>(),
-  { interactive: true, title: 'Aquarium', icon: '🐠' },
+  { interactive: true, title: 'Aquarium', icon: '🐠', action: 'sell', bringBlocked: undefined, companions: undefined },
 );
-const emit = defineEmits<{ sell: [slot: number] }>();
+const emit = defineEmits<{ sell: [slot: number]; bring: [slot: number] }>();
 
 const SIZE = 96;
 
@@ -71,6 +80,8 @@ const residents = computed(() => {
       sprite: def?.sprite,
       portrait: def?.portrait ?? '🐟',
       style: placement(habitat, hash(key)),
+      bonus: def?.temperament ? props.data.companionBonuses[def.temperament] : undefined,
+      angry: props.companions !== undefined && slot >= props.companions,
     };
   });
 });
@@ -78,9 +89,10 @@ const residents = computed(() => {
 const selectedKey = ref<string | null>(null);
 const selected = computed(() => residents.value.find((r) => r.key === selectedKey.value));
 
-function sell() {
+function act() {
   if (!selected.value) return;
-  emit('sell', selected.value.slot);
+  if (props.action === 'sell') emit('sell', selected.value.slot);
+  else emit('bring', selected.value.slot);
   selectedKey.value = null;
 }
 
@@ -133,7 +145,7 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
         class="resident"
         :class="[r.habitat, { selected: r.key === selectedKey, interactive }]"
         :style="r.style"
-        :title="interactive ? `${r.name} (🪙 ${r.sellValue})` : r.name"
+        :title="`${r.name}${interactive && action === 'sell' ? ` (🪙 ${r.sellValue})` : ''}${r.angry ? ' 💢 angry' : ''}`"
         :role="interactive ? 'button' : undefined"
         :tabindex="interactive ? 0 : undefined"
         @click="interactive && (selectedKey = r.key)"
@@ -145,16 +157,34 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
             <SpriteView v-else-if="r.sprite" :sprite="r.sprite" :size="SIZE * (2 / 3)" />
             <span v-else class="emoji">{{ r.portrait }}</span>
           </div>
+          <span v-if="r.angry" class="angry" aria-hidden="true">💢</span>
         </div>
       </div>
 
       <div v-if="selected" class="sell-panel" @keydown.esc="selectedKey = null">
         <strong>{{ selected.name }}</strong>
-        <span class="sell-value">🪙 {{ selected.sellValue }}</span>
-        <div class="actions">
-          <button @click="sell">Sell</button>
-          <button class="ghost" @click="selectedKey = null">Keep</button>
-        </div>
+        <template v-if="action === 'sell'">
+          <span v-if="selected.angry" class="mood">💢 Angry: caught this run, no bonus</span>
+          <span v-else-if="companions !== undefined && selected.bonus" class="mood">
+            {{ selected.bonus.icon }} Companion: gives {{ selected.bonus.name }} (selling it ends that)
+          </span>
+          <span class="sell-value">🪙 {{ selected.sellValue }}</span>
+          <div class="actions">
+            <button @click="act">Sell</button>
+            <button class="ghost" @click="selectedKey = null">Keep</button>
+          </div>
+        </template>
+        <template v-else>
+          <div v-if="selected.bonus" class="bonus">
+            <b>{{ selected.bonus.icon }} {{ selected.bonus.name }}</b> · {{ selected.bonus.temperamentName }}
+            <p v-for="(effect, i) in selected.bonus.effects" :key="i">{{ describeCompanionEffect(effect) }}</p>
+          </div>
+          <div class="actions">
+            <button :disabled="!!bringBlocked" :title="bringBlocked" @click="act">Bring for the session</button>
+            <button class="ghost" @click="selectedKey = null">Cancel</button>
+          </div>
+          <span v-if="bringBlocked" class="blocked">{{ bringBlocked }}</span>
+        </template>
       </div>
 
       <p v-if="!creatures.length" class="empty">Nothing in here yet. Catch something!</p>
@@ -264,6 +294,11 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
 }
 .sell-panel .sell-value { color: var(--energy); font-weight: 700; }
+.sell-panel { max-width: 260px; text-align: center; }
+.sell-panel .bonus { font-size: 0.78rem; }
+.sell-panel .bonus p, .sell-panel .mood { margin: 2px 0 0; color: var(--muted); font-size: 0.75rem; }
+.angry { position: absolute; top: -4px; right: 18px; font-size: 1rem; pointer-events: none; }
+.sell-panel .blocked { color: var(--muted); font-size: 0.75rem; }
 .sell-panel .actions { display: flex; gap: 6px; margin-top: 4px; }
 
 .empty {

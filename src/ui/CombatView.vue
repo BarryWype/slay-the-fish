@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import {
+  bonusTotal,
   creatureTypeNames,
   describeCard,
   isCardEffectiveAgainst,
@@ -36,7 +37,7 @@ const selectedUid = ref<string | null>(null);
 
 /** Coins from creatures sold on the spot by equipment (null when they go to the aquarium). */
 const instantSale = computed(() => {
-  const sales = props.state.enemies.map((e) => instantSaleValue(e.defId, props.equipment, props.data));
+  const sales = props.state.enemies.map((e) => instantSaleValue(e.defId, props.equipment, props.data, bonusTotal(props.state.bonuses, 'sellBonus')));
   return sales.some((s) => s === null) ? null : sales.reduce<number>((sum, s) => sum + (s ?? 0), 0);
 });
 
@@ -135,6 +136,7 @@ function cardText(card: CardInstance) {
     defender: only?.statuses,
     defenderTags: only?.tags,
     tagNames: tagNames.value,
+    bonusDamage: bonusTotal(props.state.bonuses, 'bonusDamage'),
   });
 }
 

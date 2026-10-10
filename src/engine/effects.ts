@@ -1,15 +1,20 @@
+import { bonusTotal } from './companions';
 import { ESCAPE_BAR_NAME, PLAYER_ID } from './constants';
 import { applyDamage, bonusAgainst, calculateDamage, tagsOf } from './damage';
 import { drawCards } from './piles';
 import { nextInt } from './rng';
 import { addStatus, STATUS_META } from './statuses';
-import type { Combatant, CombatState, Effect, EffectTarget, EnemyState } from './types';
+import type { Combatant, CombatState, CompanionTrigger, Effect, EffectTarget, EnemyState } from './types';
 import { addLog } from './util';
 
 export interface EffectContext {
   sourceId: string;
   /** The chosen target (an enemy for player cards, the player for enemy moves). */
   targetId?: string;
+  /** Companion trigger effects: numbers are used as written, without Strength, Weak or bonuses. */
+  raw?: boolean;
+  /** Extra damage, in percent, on every hit (the first attack of a fight with `firstAttackDamage`). */
+  damagePercent?: number;
 }
 
 export function getCombatant(state: CombatState, id: string): Combatant | undefined {
@@ -57,18 +62,30 @@ export function resolveEffect(state: CombatState, effect: Effect, ctx: EffectCon
       const hits = effect.hits ?? 1;
       for (let i = 0; i < hits; i++) {
         for (const t of resolveTargets(state, effect.target ?? 'target', ctx, source)) {
-          const base = effect.amount + bonusAgainst(effect.bonus, tagsOf(t));
-          const amount = calculateDamage(base, source.statuses, t.statuses);
+          const fromPlayer = source.id === PLAYER_ID;
+          const companionBonus = fromPlayer && !ctx.raw ? bonusTotal(state.bonuses, 'bonusDamage') : 0;
+          const base = effect.amount + bonusAgainst(effect.bonus, tagsOf(t)) + companionBonus;
+          let amount = ctx.raw ? base : calculateDamage(base, source.statuses, t.statuses);
+          if (ctx.damagePercent) amount = Math.floor((amount * (100 + ctx.damagePercent)) / 100);
+          const enemyAttack = !fromPlayer && t.id === PLAYER_ID;
+          if (enemyAttack && state.bonusTracker.dodged < bonusTotal(state.bonuses, 'dodgeAttacks')) {
+            state.bonusTracker.dodged++;
+            addLog(state, `${t.name} slips away from ${source.name}'s attack.`);
+            continue;
+          }
           const { blocked, hpLost } = applyDamage(t, amount);
           addLog(state, `${source.name} hit ${t.name} for ${hpLost}${blocked ? ` (${blocked} blocked)` : ''}.`);
+          if (enemyAttack) afterEnemyHit(state, source.id, amount, hpLost);
         }
       }
       return;
     }
-    case 'gainBlock':
-      source.block += effect.amount;
-      addLog(state, `${source.name} gained ${effect.amount} Block.`);
+    case 'gainBlock': {
+      const amount = effect.amount + (source.id === PLAYER_ID ? bonusTotal(state.bonuses, 'bonusBlock') : 0);
+      source.block += amount;
+      addLog(state, `${source.name} gained ${amount} Block.`);
       return;
+    }
     case 'applyStatus':
       for (const t of resolveTargets(state, effect.target ?? 'target', ctx, source)) {
         addStatus(t, effect.status, effect.amount);
@@ -86,8 +103,10 @@ export function resolveEffect(state: CombatState, effect: Effect, ctx: EffectCon
       for (const t of resolveTargets(state, effect.target ?? 'target', ctx, source)) {
         if (!('escape' in t)) continue;
         const enemy = t as EnemyState;
-        enemy.escape = Math.max(0, Math.min(enemy.escapeAt, enemy.escape + effect.amount));
-        addLog(state, `${enemy.name} ${effect.amount >= 0 ? 'panics' : 'calms down'} (${ESCAPE_BAR_NAME} ${enemy.escape}/${enemy.escapeAt}).`);
+        const calming = source.id === PLAYER_ID && effect.amount < 0 && !ctx.raw;
+        const change = effect.amount - (calming ? bonusTotal(state.bonuses, 'bonusEscapeReduction') : 0);
+        enemy.escape = Math.max(0, Math.min(enemy.escapeAt, enemy.escape + change));
+        addLog(state, `${enemy.name} ${change >= 0 ? 'panics' : 'calms down'} (${ESCAPE_BAR_NAME} ${enemy.escape}/${enemy.escapeAt}).`);
       }
       return;
     case 'changeEscapeRate':
@@ -98,5 +117,27 @@ export function resolveEffect(state: CombatState, effect: Effect, ctx: EffectCon
         addLog(state, `${enemy.name}'s ${ESCAPE_BAR_NAME} now rises by ${enemy.escapeRate} a turn.`);
       }
       return;
+  }
+}
+
+/** Triggers that fire during the enemies' turn: Block they give lasts into the player's next turn. */
+const ENEMY_TURN_TRIGGERS: CompanionTrigger[] = ['hitByEnemy', 'fullBlock', 'firstBelowHalfHp'];
+
+/** Resolve, as the player, every companion bonus triggered by `on`. `targetId` is who 'target' means. */
+export function fireTriggers(state: CombatState, on: CompanionTrigger, targetId?: string): void {
+  for (const bonus of state.bonuses) {
+    if (bonus.type !== 'trigger' || bonus.on !== on) continue;
+    const before = state.player.block;
+    resolveEffect(state, bonus.effect, { sourceId: PLAYER_ID, targetId, raw: true });
+    if (ENEMY_TURN_TRIGGERS.includes(on)) state.bonusTracker.carriedBlock += state.player.block - before;
+  }
+}
+
+function afterEnemyHit(state: CombatState, attackerId: string, amount: number, hpLost: number): void {
+  fireTriggers(state, 'hitByEnemy', attackerId);
+  if (amount > 0 && hpLost === 0) fireTriggers(state, 'fullBlock', attackerId);
+  if (hpLost > 0 && !state.bonusTracker.belowHalf && state.player.hp * 2 < state.player.maxHp) {
+    state.bonusTracker.belowHalf = true;
+    fireTriggers(state, 'firstBelowHalfHp');
   }
 }

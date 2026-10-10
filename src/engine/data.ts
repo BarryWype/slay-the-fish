@@ -1,4 +1,4 @@
-import type { BuildDef, CardDef, CharacterDef, CreatureTypeDef, EncounterDef, EnemyDef, Effect, EquipmentDef, EventDef, GameData, ShopItemDef } from './types';
+import type { BuildDef, CardDef, CharacterDef, CompanionBonusDef, CreatureTypeDef, EncounterDef, EnemyDef, Effect, EquipmentDef, EventDef, GameData, ShopItemDef } from './types';
 
 /** Content as authored: plain arrays, easy to edit by hand. */
 export interface ContentSource {
@@ -11,6 +11,7 @@ export interface ContentSource {
   equipment: EquipmentDef[];
   events: EventDef[];
   shop: ShopItemDef[];
+  companionBonuses: CompanionBonusDef[];
 }
 
 /** Index content by id, throwing a readable error if anything is inconsistent. */
@@ -27,6 +28,7 @@ export function buildGameData(source: ContentSource): GameData {
     equipment: Object.fromEntries(source.equipment.map((e) => [e.id, e])),
     events: Object.fromEntries(source.events.map((e) => [e.id, e])),
     shop: source.shop,
+    companionBonuses: Object.fromEntries(source.companionBonuses.map((b) => [b.id, b])),
   };
 }
 
@@ -150,6 +152,21 @@ export function validateContent(source: ContentSource): string[] {
   for (const item of source.shop) {
     checkDuplicate(shopIds, item.id, 'shop item');
     if (!(Number.isInteger(item.price) && item.price >= 0)) errors.push(`Shop item "${item.id}": price must be a whole number ≥ 0.`);
+  }
+
+  const bonusIds = new Set<string>();
+  for (const bonus of source.companionBonuses) {
+    checkDuplicate(bonusIds, bonus.id, 'companion bonus');
+    const where = `Companion bonus "${bonus.id}"`;
+    for (const effect of [...bonus.effects, ...bonus.fullSchool]) {
+      if (effect.type === 'trigger') checkEffects(where, [effect.effect]);
+      else if (!(effect.amount >= 0)) errors.push(`${where}: effect "${effect.type}" needs an amount ≥ 0.`);
+    }
+  }
+  for (const enemy of source.enemies) {
+    if (enemy.temperament !== undefined && !bonusIds.has(enemy.temperament)) {
+      errors.push(`Enemy "${enemy.id}": no companion bonus for temperament "${enemy.temperament}".`);
+    }
   }
 
   const buildIds = new Set<string>();

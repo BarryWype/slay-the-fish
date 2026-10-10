@@ -15,3 +15,4 @@ export * from './run';
 export * from './equipment';
 export * from './events';
 export * from './shop';
+export * from './companions';

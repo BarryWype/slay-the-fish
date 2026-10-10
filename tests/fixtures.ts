@@ -1,4 +1,4 @@
-import { applyAction, buildGameData, createCombat, type CombatState } from '../src/engine';
+import { applyAction, buildGameData, createCombat, type CombatState, type CompanionEffect } from '../src/engine';
 
 /**
  * Test-only content with fixed numbers, so engine tests don't break when a
@@ -52,6 +52,18 @@ export const testData = buildGameData({
       ],
       pattern: { type: 'weighted', weights: { x: 1, y: 1 }, maxConsecutive: 1 },
     },
+    // Three species of one temperament, to test companion bonuses.
+    ...['shellA', 'shellB', 'shellC'].map((id) => ({
+      id, name: id, hp: [10, 10] as [number, number], sellValue: 10, escapeAt: 100, escapeStart: 50, escapeRate: 1, temperament: 'shelled',
+      moves: [{ id: 'm', name: 'M', effects: [] }], pattern: { type: 'sequence' as const, moves: ['m'] },
+    })),
+  ],
+  companionBonuses: [
+    {
+      id: 'shelled', name: 'Shelled', temperamentName: 'Shelled',
+      effects: [{ type: 'bonusBlock', amount: 1 }, { type: 'bonusMaxHp', amount: 5 }, { type: 'sellBonus', amount: 10 }],
+      fullSchool: [{ type: 'keepBlock', amount: 2 }],
+    },
   ],
   encounters: [{ id: 'dummy', name: 'Dummy', enemies: ['dummy'] }],
   builds: [
@@ -72,7 +84,7 @@ export const testData = buildGameData({
 
 export function setup(
   deck: string[],
-  opts: { enemies?: string[]; seed?: number; hp?: number; equipment?: string[] } = {},
+  opts: { enemies?: string[]; seed?: number; hp?: number; equipment?: string[]; bonuses?: CompanionEffect[] } = {},
 ): CombatState {
   return createCombat(
     {
@@ -82,6 +94,7 @@ export function setup(
       playerHp: opts.hp ?? 80,
       playerMaxHp: 80,
       equipment: opts.equipment,
+      bonuses: opts.bonuses,
     },
     testData,
   );

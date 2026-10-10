@@ -7,7 +7,7 @@ import type { Screen } from './useGame';
  * - `profile`: what lasts between runs (the home aquarium, its eggs, the creature book).
  * Bump a version when that file's shape changes, and upgrade older files in its `upgrade…`.
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const PROFILE_VERSION = 3;
 
 /** Everything needed to pick a run up exactly where it was left. */
@@ -63,6 +63,15 @@ function upgradeSave(save: SavedGame): SavedGame | null {
   if (save.version === 1) {
     const { captured, ...run } = save.run as RunState & { captured: string[] };
     save = { ...save, version: 2, run: { ...run, bucket: captured } };
+  }
+  // v2 had no companions: nothing was brought from the home aquarium.
+  if (save.version === 2) {
+    const combat = save.combat && {
+      ...save.combat,
+      bonuses: [],
+      bonusTracker: { attacksThisTurn: 0, attacksThisFight: 0, dodged: 0, belowHalf: false, carriedBlock: 0 },
+    };
+    save = { ...save, version: 3, run: { ...save.run, companions: [] }, combat };
   }
   return save.version === SAVE_VERSION ? save : null;
 }

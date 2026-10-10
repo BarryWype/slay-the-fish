@@ -10,6 +10,8 @@ import {
   availableDestinations,
   bringCatchHome,
   layEggs,
+  SESSION_SLOTS,
+  takeFromHome,
   createRun,
   recordEncounter,
   finishCombat,
@@ -117,6 +119,15 @@ describe('capture record', () => {
       eggs += laid.length;
     }
     expect(eggs / 2000).toBeCloseTo(0.1, 1);
+  });
+
+  it('creatures brought from the home aquarium start the run in the bucket', () => {
+    const home = ['dummy', 'cycler', 'dummy'];
+    expect(takeFromHome(home, ['dummy', 'cycler'])).toEqual(['dummy']);
+    expect(home).toHaveLength(3); // input untouched
+    expect(() => takeFromHome(home, ['gambler'])).toThrow();
+    expect(createRun(5, testData, 'basic', ['dummy', 'cycler']).bucket).toEqual(['dummy', 'cycler']);
+    expect(() => createRun(5, testData, 'basic', Array(SESSION_SLOTS + 1).fill('dummy'))).toThrow();
   });
 
   it('a creature that got away is not captured', () => {

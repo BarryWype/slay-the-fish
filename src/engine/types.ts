@@ -2,7 +2,7 @@
 // Content definitions: the shapes designers fill in under /src/content.
 // ---------------------------------------------------------------------------
 
-export type StatusId = 'strength' | 'vulnerable' | 'weak' | 'snared';
+export type StatusId = 'strength' | 'vulnerable' | 'weak' | 'snared' | 'poison';
 export type Statuses = Partial<Record<StatusId, number>>;
 
 /**
@@ -99,6 +99,68 @@ export interface EquipmentDef {
   effects: EquipmentEffect[];
 }
 
+/** When a triggered companion bonus fires, always from the player's side. */
+export type CompanionTrigger =
+  /** Once the first turn has started (after the opening draw). */
+  | 'combatStart'
+  /** After the first attack card of each turn / each fight resolves; `target` is the enemy it was played on. */
+  | 'firstAttackEachTurn'
+  | 'firstAttackEachFight'
+  /** An enemy's attack hit dealt damage that Block soaked completely; `target` is the attacker. */
+  | 'fullBlock'
+  /** Any enemy attack hit on the player, blocked or not; `target` is the attacker. */
+  | 'hitByEnemy'
+  /** The first time the player's HP drops below half in a fight. */
+  | 'firstBelowHalfHp';
+
+/**
+ * What a creature brought from the home aquarium does for the run (see companions.ts).
+ * Every `amount` is for one species; more species of the same temperament scale it.
+ * Percentages are whole numbers (10 = 10%).
+ */
+export type CompanionEffect =
+  /** Whenever the player gains Block, they gain this much more. */
+  | { type: 'bonusBlock'; amount: number }
+  /** Up to this much Block carries over to the next turn. */
+  | { type: 'keepBlock'; amount: number }
+  /** Extra damage on every hit the player deals. */
+  | { type: 'bonusDamage'; amount: number }
+  /** The first attack card of each fight deals this percentage more damage. */
+  | { type: 'firstAttackDamage'; amount: number }
+  /** The first this-many enemy attack hits of each fight deal 0 damage. */
+  | { type: 'dodgeAttacks'; amount: number }
+  /** Player effects that lower Panic lower it by this much more. */
+  | { type: 'bonusEscapeReduction'; amount: number }
+  /** Every creature's escape rate drops by this percentage at the start of each fight (like the Reliable Reel). */
+  | { type: 'slowEscape'; amount: number }
+  /** Extra max HP for the run, given when it starts. */
+  | { type: 'bonusMaxHp'; amount: number }
+  /** Heal this much after each fight that isn't lost. */
+  | { type: 'healAfterFight'; amount: number }
+  /** Creatures sell for this percentage more during the run (bucket and on-the-spot sales). */
+  | { type: 'sellBonus'; amount: number }
+  /** Resolve `effect` as the player whenever `on` happens. Its numbers ignore Strength and other modifiers. */
+  | { type: 'trigger'; on: CompanionTrigger; effect: Effect };
+
+/** The bonus a temperament gives when creatures of it are brought along. */
+export interface CompanionBonusDef {
+  /** The temperament id (content/behaviors.ts). */
+  id: string;
+  name: string;
+  /** How the temperament is shown to the player, e.g. "Reef fish". Display-only. */
+  temperamentName: string;
+  /** Placeholder art (emoji). Display-only. */
+  icon?: string;
+  /** What the one-species bonus does, for developers. Not shown: the game generates its text from `effects`. */
+  description?: string;
+  /** Which playstyle it suits (a build id, or e.g. 'any', 'defensive', 'economy'), for future help guides. Unused for now. */
+  bestBuild?: string;
+  /** For one species; scaled by the number of species (see `COMPANION_SCALE_CAP`). */
+  effects: CompanionEffect[];
+  /** Added, as written, once `FULL_SCHOOL` species of this temperament are brought. */
+  fullSchool: CompanionEffect[];
+}
+
 /** What a map event's choice does. Percentages are whole numbers (30 = 30%). */
 export type EventEffect =
   | { type: 'heal'; percent: number }
@@ -192,6 +254,8 @@ export interface EnemyDef {
   sprite?: SpriteRef;
   /** How it moves around in the aquarium. Display-only. */
   habitat?: Habitat;
+  /** Picks its companion bonus (`GameData.companionBonuses`) when brought from the home aquarium. */
+  temperament?: string;
 }
 
 /** `swim` back and forth, `drift` slowly up and down, or crawl along the `bottom`. */
@@ -216,6 +280,8 @@ export interface GameData {
   equipment: Record<string, EquipmentDef>;
   events: Record<string, EventDef>;
   shop: ShopItemDef[];
+  /** Keyed by temperament id. */
+  companionBonuses: Record<string, CompanionBonusDef>;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +340,21 @@ export interface CombatState {
   enemies: EnemyState[];
   piles: Piles;
   log: string[];
+  /** Companion bonuses active in this fight, already scaled (see companions.ts). */
+  bonuses: CompanionEffect[];
+  /** What the once-per-turn / once-per-fight bonuses need to remember. */
+  bonusTracker: BonusTracker;
+}
+
+export interface BonusTracker {
+  attacksThisTurn: number;
+  attacksThisFight: number;
+  /** Enemy attack hits dodged so far (`dodgeAttacks`). */
+  dodged: number;
+  /** `firstBelowHalfHp` has fired. */
+  belowHalf: boolean;
+  /** Block gained from bonuses triggered by enemy attacks; it survives into the next turn. */
+  carriedBlock: number;
 }
 
 export type CombatAction =

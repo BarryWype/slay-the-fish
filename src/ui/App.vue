@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SESSION_SLOTS } from '../engine';
 import Aquarium from './Aquarium.vue';
 import BuildSelect from './BuildSelect.vue';
 import CombatView from './CombatView.vue';
@@ -7,6 +8,7 @@ import EventScreen from './EventScreen.vue';
 import MapView from './MapView.vue';
 import MenuScreen from './MenuScreen.vue';
 import RewardScreen from './RewardScreen.vue';
+import SessionSlots from './SessionSlots.vue';
 import ShopScreen from './ShopScreen.vue';
 import { useGame } from './useGame';
 
@@ -22,7 +24,7 @@ function initialSeed() {
 }
 
 const game = useGame(initialSeed());
-const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit, savedGame, homeAquarium, creatureBook, eggs, newEggs, runEnd } = game;
+const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit, savedGame, homeAquarium, creatureBook, eggs, newEggs, brought, homeLeft, runEnd } = game;
 
 function newRun() {
   game.newRun(randomSeed());
@@ -66,11 +68,31 @@ function newRunFromMenu() {
     />
     <div v-else-if="screen === 'build' || !run" class="build-layout">
       <BuildSelect class="build-choices" :data="data" @choose="game.chooseBuild" />
-      <Aquarium class="aquarium" :creatures="homeAquarium" :data="data" :interactive="false" title="Home aquarium" icon="🏠" />
+      <div class="home-row">
+        <Aquarium
+          class="aquarium"
+          :creatures="homeLeft"
+          :data="data"
+          action="bring"
+          :bring-blocked="brought.length >= SESSION_SLOTS ? 'All session slots are taken.' : undefined"
+          title="Home aquarium"
+          icon="🏠"
+          @bring="game.bring"
+        />
+        <SessionSlots :brought="brought" :data="data" @remove="game.unbring" />
+      </div>
     </div>
     <div v-else-if="screen === 'map'" class="map-layout">
       <MapView :run="run" :data="data" @travel="game.travel" />
-      <Aquarium class="aquarium" :creatures="run.bucket" :data="data" title="Bucket" icon="🪣" @sell="game.sell" />
+      <Aquarium
+        class="aquarium"
+        :creatures="run.bucket"
+        :companions="run.companions.length"
+        :data="data"
+        title="Bucket"
+        icon="🪣"
+        @sell="game.sell"
+      />
     </div>
     <CombatView
       v-else-if="screen === 'combat' && combat"
@@ -152,7 +174,8 @@ function newRunFromMenu() {
   padding-bottom: 12px;
 }
 .build-layout .build-choices { flex: 1; min-height: 0; overflow-y: auto; }
-.build-layout .aquarium { flex: 0 0 50vh; }
+.build-layout .home-row { display: flex; flex: 0 0 50vh; gap: 12px; }
+.build-layout .aquarium { flex: 1; min-width: 0; }
 
 .complete { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 15vh; }
 .complete h2 { margin: 0; font-size: 2rem; }
