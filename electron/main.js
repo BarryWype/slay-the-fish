@@ -32,14 +32,38 @@ ipcMain.handle('data:write', async (_event, name, json) => {
 ipcMain.handle('data:delete', (_event, name) => rm(dataPath(name), { force: true }));
 ipcMain.handle('app:quit', () => app.quit());
 
-function createWindow() {
+/**
+ * Window options (fullscreen) live in settings.json, written only from here and kept apart
+ * from the game's data files, so resetting progression doesn't touch them.
+ */
+const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+async function readSettings() {
+  try {
+    return JSON.parse(await readFile(settingsPath(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+const writeSettings = (settings) => writeFile(settingsPath(), JSON.stringify(settings), 'utf8');
+
+ipcMain.handle('window:isFullScreen', (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false);
+ipcMain.handle('window:setFullScreen', (event, on) => BrowserWindow.fromWebContents(event.sender)?.setFullScreen(!!on));
+
+async function createWindow() {
+  const settings = await readSettings();
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    // Only ever pass `true`: on macOS, `fullscreen: false` disables fullscreen for the window.
+    ...(settings.fullscreen ? { fullscreen: true } : {}),
     autoHideMenuBar: true,
     title: 'Slay the Fish',
     webPreferences: { preload: path.join(dirname, 'preload.cjs') },
   });
+  // Remembered however fullscreen was toggled: the options, the OS button or a shortcut.
+  const remember = (fullscreen) => writeSettings({ ...settings, fullscreen }).catch(() => {});
+  win.on('enter-full-screen', () => remember(true));
+  win.on('leave-full-screen', () => remember(false));
   // `npm run electron:dev` points this at the Vite dev server; otherwise load the build.
   if (process.env.VITE_DEV_SERVER_URL) win.loadURL(process.env.VITE_DEV_SERVER_URL);
   else win.loadFile(path.join(dirname, '../dist/index.html'));

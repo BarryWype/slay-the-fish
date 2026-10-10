@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld('desktop', {
   writeData: (name, json) => ipcRenderer.invoke('data:write', name, json),
   deleteData: (name) => ipcRenderer.invoke('data:delete', name),
   quit: () => ipcRenderer.invoke('app:quit'),
+  isFullScreen: () => ipcRenderer.invoke('window:isFullScreen'),
+  setFullScreen: (on) => ipcRenderer.invoke('window:setFullScreen', on),
 });

@@ -194,3 +194,13 @@ The fisherman uses three strips of 48×48 frames in `src/ui/assets/`. They are r
 ## Gear
 
 `src/content/gear.ts` lists the 36 items in `fishing_gear.png`, with `no` matching `gear_names.pdf`. What gear does in the game isn't designed yet, so each entry has a free-text `description` for now.
+
+# TODO
+
+- mini boss level 9
+- add 7 boss and mini boss so we get 151 creature ... ;)
+- add animation to cards when played (drag and drop)
+- rework the spear build: add blood mechanic per fish on the stringer
+- rework cards per build
+- rework difficulty: life, stamina bar, damage
+- re-use the blood mechanic with other builds

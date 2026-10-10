@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { Discovery, GameData } from '../engine';
 import Aquarium from './Aquarium.vue';
 import CreatureBook from './CreatureBook.vue';
@@ -23,6 +23,38 @@ function reset() {
   confirmReset.value?.close();
   emit('reset');
 }
+
+const options = ref<HTMLDialogElement>();
+/**
+ * The desktop app makes the window fullscreen (and remembers it, see electron/main.js);
+ * a browser uses the Fullscreen API, which only lasts until the page is left.
+ */
+const fullscreen = ref(false);
+
+async function syncFullscreen() {
+  fullscreen.value = desktop ? await desktop.isFullScreen() : !!document.fullscreenElement;
+}
+
+async function setFullscreen(on: boolean) {
+  fullscreen.value = on;
+  try {
+    if (desktop) await desktop.setFullScreen(on);
+    else if (on) await document.documentElement.requestFullscreen();
+    else if (document.fullscreenElement) await document.exitFullscreen();
+  } catch {
+    // Refused (e.g. the browser blocks it): show what really happened.
+    await syncFullscreen();
+  }
+}
+
+async function openOptions() {
+  await syncFullscreen();
+  options.value?.showModal();
+}
+
+// Esc or F11 can leave browser fullscreen without going through the options.
+onMounted(() => document.addEventListener('fullscreenchange', syncFullscreen));
+onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFullscreen));
 </script>
 
 <template>
@@ -35,6 +67,7 @@ function reset() {
         <button :disabled="!canResume" :title="canResume ? undefined : 'No saved run yet'" @click="emit('resume')">Resume</button>
         <button @click="emit('newRun')">New run</button>
         <button class="ghost" @click="viewing = true">See aquarium</button>
+        <button class="ghost" @click="openOptions">Options</button>
         <button v-if="desktop" class="ghost" @click="desktop.quit()">Exit</button>
       </nav>
     </div>
@@ -47,6 +80,19 @@ function reset() {
       <footer>
         <button class="ghost" autofocus @click="confirmReset?.close()">Cancel</button>
         <button class="danger" @click="reset">Reset everything</button>
+      </footer>
+    </dialog>
+    <dialog ref="options" class="confirm options" @click="$event.target === options && options?.close()">
+      <h3>Options</h3>
+      <label class="option">
+        <span>
+          Fullscreen
+          <small>{{ desktop ? 'Remembered next time you open the game.' : 'Press Esc to leave it.' }}</small>
+        </span>
+        <input type="checkbox" role="switch" :checked="fullscreen" @change="setFullscreen(($event.target as HTMLInputElement).checked)" />
+      </label>
+      <footer>
+        <button autofocus @click="options?.close()">Done</button>
       </footer>
     </dialog>
     <CreatureBook :data="data" :home-aquarium="homeAquarium" :discovered="creatureBook" />
@@ -106,6 +152,11 @@ function reset() {
 .confirm p { margin: 0; color: var(--muted); }
 .confirm footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .danger { background: #c94a4a; color: #fff; }
+
+.options { border-color: #2c3a4a; }
+.option { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; cursor: pointer; }
+.option small { display: block; color: var(--muted); font-size: 0.75rem; }
+.option input { width: 20px; height: 20px; accent-color: var(--highlight); cursor: pointer; }
 
 .show-menu { position: absolute; top: 12px; right: 16px; z-index: 1; padding: 8px 14px; }
 </style>

@@ -13,5 +13,7 @@ interface Window {
     writeData(name: 'save' | 'profile', json: string): Promise<void>;
     deleteData(name: 'save' | 'profile'): Promise<void>;
     quit(): Promise<void>;
+    isFullScreen(): Promise<boolean>;
+    setFullScreen(on: boolean): Promise<void>;
   };
 }

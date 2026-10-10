@@ -1,7 +1,7 @@
 {
   "name": "spire-slice",
   "private": true,
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
   "main": "electron/main.js",
   "engines": {
@@ -26,13 +26,13 @@
   "devDependencies": {
     "@types/node": "^20.17.6",
     "@types/pngjs": "^6.0.5",
-    "@vitejs/plugin-vue": "^5.1.4",
+    "@vitejs/plugin-vue": "^6.0.10",
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "pngjs": "^7.0.0",
     "typescript": "~5.6.3",
-    "vite": "^5.4.10",
-    "vitest": "^2.1.4",
+    "vite": "^8.3.4",
+    "vitest": "^4.1.11",
     "vue-tsc": "^2.1.10"
   },
   "build": {
