@@ -27,7 +27,8 @@ import {
   type PlayerAnimation,
 } from './sprites';
 
-const props = defineProps<{ state: CombatState; data: GameData; equipment: string[] }>();
+/** `newEggs`: eggs laid at home when the run ends here (see useGame `breed`). */
+const props = defineProps<{ state: CombatState; data: GameData; equipment: string[]; newEggs: number }>();
 const emit = defineEmits<{ action: [CombatAction]; claimVictory: []; leave: []; restart: [] }>();
 
 /** A card waiting for the player to click an enemy. */
@@ -245,6 +246,7 @@ function endTurn() {
         <template v-else>
           <h2>Defeat</h2>
           <p>You fell on turn {{ state.turn }}.</p>
+          <p v-if="newEggs" class="new-eggs">🥚 {{ newEggs === 1 ? 'An egg was' : `${newEggs} eggs were` }} laid in your home aquarium!</p>
           <button @click="emit('restart')">Start a new run</button>
         </template>
       </div>
@@ -253,6 +255,7 @@ function endTurn() {
 </template>
 
 <style scoped>
+.new-eggs { color: var(--highlight); font-weight: 600; }
 .combat { position: relative; display: flex; flex-direction: column; gap: 16px; min-height: calc(100vh - 80px); }
 
 .battlefield {

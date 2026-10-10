@@ -173,6 +173,8 @@ export interface EnemyDef {
   hp: [number, number];
   /** Coins it sells for once captured. Defaults to 0. */
   sellValue?: number;
+  /** 0–1: after each run, chance that two or more of it in the home aquarium lay an egg. Defaults to 0. */
+  breedChance?: number;
   /** The tug of war: the escape bar flees at `escapeAt`, captures at 0. */
   escapeAt: number;
   /** Escape bar value at the start of combat. */

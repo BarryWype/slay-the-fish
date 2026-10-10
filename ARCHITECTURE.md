@@ -10,7 +10,7 @@ How Slay the Fish is put together, and the rules the code relies on. Read this b
 | `src/content/` | Game data: creatures, cards, builds, equipment, events, shop items, creature types. Plain typed arrays. | Data only. `content/index.ts` passes everything through `buildGameData`, which validates it and fails at startup with a readable error. |
 | `src/ui/` | Vue components plus `useGame.ts`, which holds the current states and calls the engine. | No game rules here. Components read state and emit actions. Display-only fields (sprites, icons, terrain) live in content but are only read by the UI. |
 | `electron/` | The desktop shell: a window, plus a small file bridge for saving. | The page never touches the file system directly; it goes through `window.desktop` (see Persistence). |
-| `scripts/` | One-off asset generators (`npm run sprites`, `npm run terrain`). | Seeded: re-running gives the same images. |
+| `scripts/` | One-off asset generators (`npm run sprites`, `npm run terrain`, `npm run eggs`). | Seeded: re-running gives the same images. |
 
 ## State model
 
@@ -33,7 +33,7 @@ menu ──New run──▶ build ──Select──▶ map ──▶ fight ─�
   └──── Menu button (any screen) ◀── complete (boss beaten, session finished, or boss fled) / defeat
 ```
 
-- **Menu:** Resume (disabled without a save), New run, See aquarium, Exit (desktop app only). The menu's background is the home aquarium. A 📖 tab on the right edge (menu and See aquarium view) opens the creature book (`CreatureBook.vue`): a drawer listing every creature, with how many are in the home aquarium.
+- **Menu:** Resume (disabled without a save), New run, See aquarium, Exit (desktop app only). A small **Reset progression** button (bottom right, after a confirmation) deletes both the save and the profile (`resetProgress`). The menu's background is the home aquarium. A 📖 tab on the right edge (menu and See aquarium view) opens the creature book (`CreatureBook.vue`): a drawer listing every creature. Creatures never encountered show as **?**. The others show their image, their status (Seen or Captured), and how many are in the home aquarium.
 - **Build selection:** one tile per build. The image opens a details dialog (description, strong-against types, starter deck, equipment). The home aquarium fills the bottom half of the screen.
 
 ## A run
@@ -97,7 +97,16 @@ There are two separate collections of creatures. They never share creatures, exc
    - **Selling:** the player can sell creatures from the bucket at any time.
    - **Events:** events can read the bucket. The Enthusiastic Passerby tips coins per creature in it.
 3. **Successful run**, either the boss beaten (`claimVictory`) or the session finished at the 🚪 node (`finishSession`): `bringCatchHome` adds everything still in the bucket to the home aquarium, and the profile is written.
-4. **Lost run, abandoned run (New run over a save), or the boss fleeing:** the bucket is lost. The home aquarium is unchanged.
+4. **Lost run, abandoned run (New run over a save), or the boss fleeing:** the bucket is lost. The home aquarium gets nothing from it.
+5. **Breeding, after every run that ends** (won, session finished, lost, or the boss fleeing, but not an abandoned run):
+   - **Laying:** `layEggs` gives each species with at least two in the home aquarium one roll at its `breedChance` (per creature in `content/creatures.ts`, 10% for all for now). After a successful run it runs once the bucket has joined the home aquarium, so new catches can breed straight away.
+   - **Eggs:** each egg holds one creature id and is saved in `Profile.eggs`. `EggTray.vue` shows the eggs at the bottom of the window between runs (menu, build selection, end screen), playing the idle animation.
+   - **Hatching:** clicking an egg plays the hatching animation. Then `hatchEgg` moves its creature into the home aquarium, and the creature is shown in the centre with a halo and streamers until the next click.
+   - **Colours:** all eggs are beige for now. Planned rarity order: beige → white → purple → gold.
+
+**Creature book** (`Profile.creatureBook`, id → `'seen' | 'captured'`): `recordEncounter` (engine, `run.ts`) updates it from the combat state. A watcher on `combat` in `useGame.ts` writes the profile whenever something new is learnt:
+- **Seen:** as soon as a fight starts, whatever the outcome.
+- **Captured:** once the fight is won, even if the run is lost later or the creature is sold. A captured creature never goes back to seen.
 
 Anything meant to last between runs (score, unlocks, statistics) belongs in the **profile**, never in `RunState`.
 
@@ -107,18 +116,18 @@ All saving lives in `ui/saveStore.ts`. There are two files, each with its own ve
 
 | File | Contents | Written | Deleted |
 |---|---|---|---|
-| `save.json` | `SavedGame`: version, seed, screen, run, combat, pending card rewards, open event, shop visit | After every state change (a watcher in `useGame.ts`) | When the run is lost or completed |
-| `profile.json` | `Profile`: version, home aquarium | When a successful run brings its bucket home | Never |
+| `save.json` | `SavedGame`: version, seed, screen, run, combat, pending card rewards, open event, shop visit | After every state change (a watcher in `useGame.ts`) | When the run is lost or completed, or by **Reset progression** |
+| `profile.json` | `Profile`: version, home aquarium, eggs, creature book | When a successful run brings its bucket home, when an egg is laid or hatched, and when a creature is first seen or captured | Only by **Reset progression** |
 
 - **Where:** in the desktop app, in the app's data folder (`app.getPath('userData')`, e.g. `~/Library/Application Support/Slay the Fish`). In a browser, localStorage under `slay-the-fish:save` and `slay-the-fish:profile`.
 - **Desktop bridge:** `electron/preload.cjs` exposes `window.desktop.readData / writeData / deleteData(name)` and `quit()`. `electron/main.js` only accepts the names in `DATA_FILES`, so the page can't touch any other file.
 - **Safe writes:** a file is written to `name.json.tmp`, then renamed over the real one, so a crash mid-write can't corrupt it. Writes are queued one after another, so an older write can never land after a newer one.
-- **Versions** (`SAVE_VERSION`, currently 2, and `PROFILE_VERSION`, currently 1). When a saved shape changes:
+- **Versions** (`SAVE_VERSION`, currently 2, and `PROFILE_VERSION`, currently 3). When a saved shape changes:
   1. Bump the version.
   2. Convert older files in `upgradeSave` (or the profile's equivalent).
   3. A file that can't be upgraded is ignored rather than crashing: no Resume, or a fresh profile.
 
-  Example: version 1 saves called the bucket `run.captured`, and `upgradeSave` renames it.
+  Examples: version 1 saves called the bucket `run.captured`, and `upgradeSave` renames it. Version 1 profiles had no creature book; `upgradeProfile` marks everything in the home aquarium as captured. Version 2 profiles had no eggs.
 - **Resume** restores every saved field, so the player returns to the same screen. Mid-fight saves include the hand, energy and Panic.
 
 ## Desktop app and releases
@@ -134,6 +143,7 @@ All saving lives in `ui/saveStore.ts`. There are two files, each with its own ve
 - **Sprite sheets** are registered in `ui/sprites.ts` (`SHEETS`) and referenced from content as `{ sheet, index }` (1-based).
 - **Animated creature sheets** (`assets/creatures/NNN.png`, 6 frames × 4 rows: idle, attack, capture, flee) come from `scripts/generate-creature-sprites.mjs`.
 - **Map terrain patches** (`assets/terrain.png`, one 40×40 tile per creature type) come from `scripts/generate-map-terrain.mjs`. Each creature type points to its tile with `terrain` in `content/creatureTypes.ts`.
+- **Eggs** (`assets/eggs/<colour>.png`: idle row, then hatching row, 32×32 frames) are cut from `assets/egg.png` (art by VIERGACHT) by `scripts/extract-eggs.mjs`. They're used through `eggClip` in `ui/sprites.ts`.
 
 ## Testing
 

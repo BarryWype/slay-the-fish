@@ -9,7 +9,9 @@ import {
   escapeRateReduction,
   availableDestinations,
   bringCatchHome,
+  layEggs,
   createRun,
+  recordEncounter,
   finishCombat,
   isMapComplete,
   rollCardRewards,
@@ -89,6 +91,32 @@ describe('capture record', () => {
     const run = { ...createRun(5, testData, 'basic'), bucket: ['dummy', 'cycler'] };
     expect(bringCatchHome(['gambler'], run)).toEqual(['gambler', 'dummy', 'cycler']);
     expect(run.bucket).toEqual(['dummy', 'cycler']); // input untouched
+  });
+
+  it('the creature book marks the creatures of a fight seen, then captured once it is won', () => {
+    const run = createRun(5, testData, 'basic');
+    const { combat } = travelTo(run, availableDestinations(run)[0].id, testData);
+    const ids = combat.enemies.map((e) => e.defId);
+    const seen = recordEncounter({}, combat);
+    expect(Object.keys(seen).sort()).toEqual([...new Set(ids)].sort());
+    expect(Object.values(seen).every((s) => s === 'seen')).toBe(true);
+    expect(recordEncounter(seen, combat)).toBe(seen); // nothing new
+    const captured = recordEncounter(seen, { ...combat, phase: 'won' });
+    expect(Object.values(captured).every((s) => s === 'captured')).toBe(true);
+    expect(recordEncounter(captured, { ...combat, phase: 'fled' })).toBe(captured); // never downgraded
+  });
+
+  it('only species with at least two in the home aquarium lay eggs, at their breed chance', () => {
+    const data = { ...testData, enemies: { ...testData.enemies, dummy: { ...testData.enemies.dummy, breedChance: 0.1 } } };
+    const home = ['dummy', 'dummy', 'dummy', 'cycler', 'cycler'];
+    let eggs = 0;
+    for (let seed = 0; seed < 2000; seed++) {
+      const laid = layEggs(home, createRun(seed, data, 'basic'), data);
+      expect(laid.every((id) => id === 'dummy')).toBe(true); // cycler has no breed chance
+      expect(laid.length).toBeLessThanOrEqual(1);
+      eggs += laid.length;
+    }
+    expect(eggs / 2000).toBeCloseTo(0.1, 1);
   });
 
   it('a creature that got away is not captured', () => {

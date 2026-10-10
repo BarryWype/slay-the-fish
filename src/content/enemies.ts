@@ -19,6 +19,7 @@ function toEnemy(creature: CreatureDef): EnemyDef {
     name: creature.name,
     hp: creature.hp,
     sellValue: creature.sellValue,
+    breedChance: creature.breedChance,
     escapeAt: creature.escapeAt,
     escapeStart: creature.escapeStart,
     escapeRate: creature.escapeRate,

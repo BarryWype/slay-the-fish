@@ -2,6 +2,7 @@
 import Aquarium from './Aquarium.vue';
 import BuildSelect from './BuildSelect.vue';
 import CombatView from './CombatView.vue';
+import EggTray from './EggTray.vue';
 import EventScreen from './EventScreen.vue';
 import MapView from './MapView.vue';
 import MenuScreen from './MenuScreen.vue';
@@ -21,7 +22,7 @@ function initialSeed() {
 }
 
 const game = useGame(initialSeed());
-const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit, savedGame, homeAquarium, runEnd } = game;
+const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit, savedGame, homeAquarium, creatureBook, eggs, newEggs, runEnd } = game;
 
 function newRun() {
   game.newRun(randomSeed());
@@ -57,9 +58,11 @@ function newRunFromMenu() {
       v-if="screen === 'menu'"
       :can-resume="!!savedGame"
       :home-aquarium="homeAquarium"
+      :creature-book="creatureBook"
       :data="data"
       @resume="game.resume"
       @new-run="newRunFromMenu"
+      @reset="game.resetProgress"
     />
     <div v-else-if="screen === 'build' || !run" class="build-layout">
       <BuildSelect class="build-choices" :data="data" @choose="game.chooseBuild" />
@@ -74,6 +77,7 @@ function newRunFromMenu() {
       :state="combat"
       :data="data"
       :equipment="run.equipment"
+      :new-eggs="newEggs"
       @action="game.dispatch"
       @claim-victory="game.claimVictory"
       @leave="game.leaveFight"
@@ -115,12 +119,16 @@ function newRunFromMenu() {
         <h2>The boss got away</h2>
         <p>Your run ends here, and your bucket stays behind.</p>
       </template>
+      <p v-if="newEggs" class="new-eggs">🥚 {{ newEggs === 1 ? 'An egg was' : `${newEggs} eggs were` }} laid in your home aquarium!</p>
       <div class="complete-actions">
         <button class="ghost" @click="game.toMenu">Back to the menu</button>
         <button @click="newRun">Start a new run</button>
       </div>
     </section>
   </main>
+
+  <!-- Only between runs, where the home aquarium is: not over the map's bucket or the cards. -->
+  <EggTray v-if="['menu', 'build', 'complete'].includes(screen)" :eggs="eggs" :data="data" @hatch="game.hatchEgg" />
 </template>
 
 <style scoped>
@@ -150,5 +158,6 @@ function newRunFromMenu() {
 .complete h2 { margin: 0; font-size: 2rem; }
 .complete p { margin: 0; max-width: 520px; text-align: center; }
 .leave-icon { font-size: 4rem; line-height: 1; }
+.new-eggs { color: var(--highlight); font-weight: 600; }
 .complete-actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>

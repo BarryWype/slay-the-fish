@@ -174,6 +174,37 @@ export function bringCatchHome(home: readonly string[], run: RunState): string[]
   return [...home, ...run.bucket];
 }
 
+/**
+ * Eggs laid in the home aquarium when a run ends, however it ended: each species with at least
+ * two creatures rolls its `breedChance` once. Returns the creature id inside each new egg.
+ * Rolls use the finished run's RNG, in the order species first appear.
+ */
+export function layEggs(home: readonly string[], run: RunState, data: GameData): string[] {
+  const rng = { rng: run.rng };
+  const counts = new Map<string, number>();
+  for (const id of home) counts.set(id, (counts.get(id) ?? 0) + 1);
+  return [...counts]
+    .filter(([id, count]) => count >= 2 && nextFloat(rng) < (data.enemies[id]?.breedChance ?? 0))
+    .map(([id]) => id);
+}
+
+/** How far the player got with a creature, in the creature book. */
+export type Discovery = 'seen' | 'captured';
+
+/**
+ * The creature book after `combat`: its creatures are seen, and captured once the fight is won.
+ * Returns `book` itself when nothing new was learnt.
+ */
+export function recordEncounter(
+  book: Readonly<Record<string, Discovery>>,
+  combat: CombatState,
+): Readonly<Record<string, Discovery>> {
+  const status: Discovery = combat.phase === 'won' ? 'captured' : 'seen';
+  const updates = combat.enemies.filter((e) => book[e.defId] !== 'captured' && book[e.defId] !== status);
+  if (!updates.length) return book;
+  return { ...book, ...Object.fromEntries(updates.map((e) => [e.defId, status])) };
+}
+
 /** Offer `count` distinct non-starter cards: shared ones plus those of the run's build. */
 export function rollCardRewards(
   run: RunState,

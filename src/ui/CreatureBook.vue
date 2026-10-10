@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { creatureTypeNames, type GameData } from '../engine';
+import { creatureTypeNames, type Discovery, type GameData } from '../engine';
 import SpriteView from './SpriteView.vue';
 
-/** A 📖 tab on the right edge that opens a full-height drawer listing every creature in the game. */
-const props = defineProps<{ data: GameData; homeAquarium: string[] }>();
+/**
+ * A 📖 tab on the right edge that opens a full-height drawer listing every creature in the game.
+ * Creatures never encountered show as a question mark.
+ */
+const props = defineProps<{
+  data: GameData;
+  homeAquarium: string[];
+  discovered: Readonly<Record<string, Discovery>>;
+}>();
 
 const open = ref(false);
 const closeButton = ref<HTMLButtonElement>();
 const tagNames = computed(() => creatureTypeNames(props.data));
 
-/** Every creature, in sprite-sheet order, with how many are in the home aquarium. */
+/** Every creature, in sprite-sheet order, with how far the player got with it and how many are at home. */
 const creatures = computed(() => {
   const owned = new Map<string, number>();
   for (const id of props.homeAquarium) owned.set(id, (owned.get(id) ?? 0) + 1);
@@ -23,8 +30,10 @@ const creatures = computed(() => {
       sprite: e.sprite!,
       type: e.tags?.map((t) => tagNames.value[t] ?? t).join(', ') ?? '',
       owned: owned.get(e.id) ?? 0,
+      status: props.discovered[e.id],
     }));
 });
+const discoveredCount = computed(() => creatures.value.filter((c) => c.status).length);
 
 async function show() {
   open.value = true;
@@ -46,15 +55,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
   <aside class="drawer" :class="{ open }" role="dialog" aria-modal="true" aria-label="Creature book" :inert="!open">
     <header>
       <h2>📖 Creature book</h2>
-      <span class="total">{{ creatures.length }} creatures</span>
+      <span class="total">{{ discoveredCount }} / {{ creatures.length }} discovered</span>
       <button ref="closeButton" class="ghost close" aria-label="Close the creature book" @click="open = false">✕</button>
     </header>
     <ul class="grid">
-      <li v-for="c in creatures" :key="c.id" class="creature" :title="`${c.name} (${c.type})`">
-        <SpriteView :sprite="c.sprite" :size="64" />
-        <span class="name">{{ c.name }}</span>
-        <span class="type">{{ c.type }}</span>
-        <span v-if="c.owned" class="owned" :title="`${c.owned} in your home aquarium`">×{{ c.owned }}</span>
+      <li
+        v-for="c in creatures"
+        :key="c.id"
+        class="creature"
+        :class="c.status"
+        :title="c.status ? `${c.name} (${c.type})` : undefined"
+      >
+        <template v-if="c.status">
+          <SpriteView :sprite="c.sprite" :size="64" />
+          <span class="status">{{ c.status === 'captured' ? 'Captured' : 'Seen' }}</span>
+          <span v-if="c.owned" class="owned" :title="`${c.owned} in your home aquarium`">×{{ c.owned }}</span>
+        </template>
+        <template v-else>
+          <span class="unknown" aria-label="Not encountered yet">?</span>
+          <span class="status">Unknown</span>
+        </template>
       </li>
     </ul>
   </aside>
@@ -125,8 +145,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
   background: rgb(255 255 255 / 0.04);
   text-align: center;
 }
-.name { font-size: 0.75rem; font-weight: 600; line-height: 1.15; }
-.type { font-size: 0.65rem; color: var(--muted); }
+.unknown {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: var(--muted);
+  opacity: 0.5;
+}
+.status { font-size: 0.7rem; font-weight: 600; color: var(--muted); }
+.captured .status { color: #7fd18f; }
 .owned {
   position: absolute;
   top: 4px;

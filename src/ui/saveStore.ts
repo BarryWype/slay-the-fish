@@ -1,14 +1,14 @@
-import type { CombatState, RunState, ShopVisit } from '../engine';
+import type { CombatState, Discovery, RunState, ShopVisit } from '../engine';
 import type { Screen } from './useGame';
 
 /**
  * Two files, see ARCHITECTURE.md → Persistence:
  * - `save`: the run in progress, deleted when it ends;
- * - `profile`: what lasts between runs (the home aquarium).
+ * - `profile`: what lasts between runs (the home aquarium, its eggs, the creature book).
  * Bump a version when that file's shape changes, and upgrade older files in its `upgrade…`.
  */
 export const SAVE_VERSION = 2;
-export const PROFILE_VERSION = 1;
+export const PROFILE_VERSION = 3;
 
 /** Everything needed to pick a run up exactly where it was left. */
 export interface SavedGame {
@@ -27,6 +27,10 @@ export interface Profile {
   version: number;
   /** Creature ids brought home from won runs (duplicates allowed). */
   homeAquarium: string[];
+  /** Every creature ever met, by id; missing means never encountered. */
+  creatureBook: Record<string, Discovery>;
+  /** Eggs waiting to be hatched: the creature id inside each. */
+  eggs: string[];
 }
 
 type DataFile = 'save' | 'profile';
@@ -77,13 +81,28 @@ export function clearSavedGame() {
   enqueue(() => storage.deleteData('save'));
 }
 
-/** The profile, or a fresh one (empty home aquarium) if there's none or it can't be read. */
+function upgradeProfile(profile: Profile): Profile | null {
+  // v1 had no creature book: whatever is in the home aquarium was captured.
+  if (profile.version === 1) {
+    const creatureBook = Object.fromEntries(profile.homeAquarium.map((id) => [id, 'captured' as const]));
+    profile = { ...profile, version: 2, creatureBook };
+  }
+  // v2 had no eggs.
+  if (profile.version === 2) profile = { ...profile, version: 3, eggs: [] };
+  return profile.version === PROFILE_VERSION ? profile : null;
+}
+
+/** The profile, or a fresh one (nothing owned or met) if there's none or it can't be read. */
 export async function loadProfile(): Promise<Profile> {
   const profile = await read<Profile>('profile');
-  return profile?.version === PROFILE_VERSION ? profile : { version: PROFILE_VERSION, homeAquarium: [] };
+  return (profile && upgradeProfile(profile)) ?? { version: PROFILE_VERSION, homeAquarium: [], creatureBook: {}, eggs: [] };
 }
 
 export function writeProfile(profile: Profile) {
   const json = JSON.stringify(profile);
   enqueue(() => storage.writeData('profile', json));
+}
+
+export function clearProfile() {
+  enqueue(() => storage.deleteData('profile'));
 }

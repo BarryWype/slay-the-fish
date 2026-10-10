@@ -7,7 +7,9 @@ import {
   findNode,
   applyAction,
   bringCatchHome,
+  layEggs,
   createRun,
+  recordEncounter,
   finishCombat,
   isMapComplete,
   visitLeave,
@@ -18,10 +20,12 @@ import {
   visitShop,
   type CombatAction,
   type CombatState,
+  type Discovery,
   type RunState,
   type ShopVisit,
 } from '../engine';
 import {
+  clearProfile,
   clearSavedGame,
   loadProfile,
   loadSavedGame,
@@ -54,17 +58,65 @@ export function useGame(initialSeed: number) {
   loadSavedGame().then((save) => (savedGame.value = save));
   /** Creatures brought home from won runs; shown on the menu and build screens. */
   const homeAquarium = ref<string[]>([]);
-  loadProfile().then((profile) => (homeAquarium.value = profile.homeAquarium));
+  /** Every creature met so far, seen or captured; shown in the creature book. */
+  const creatureBook = shallowRef<Readonly<Record<string, Discovery>>>({});
+  /** Eggs laid in the home aquarium, waiting to be clicked: the creature id inside each. */
+  const eggs = ref<string[]>([]);
+  loadProfile().then((profile) => {
+    homeAquarium.value = profile.homeAquarium;
+    creatureBook.value = profile.creatureBook;
+    eggs.value = profile.eggs;
+  });
   /** The finish node the player clicked, waiting for them to confirm on the leave screen. */
   const leaveNodeId = ref<string | null>(null);
   /** On the end screen, how the run ended. Only `fled` leaves the bucket behind. */
   const runEnd = ref<'won' | 'left' | 'fled'>('won');
 
+  function saveProfile() {
+    writeProfile({
+      version: PROFILE_VERSION,
+      homeAquarium: homeAquarium.value,
+      creatureBook: { ...creatureBook.value },
+      eggs: eggs.value,
+    });
+  }
+
+  // Fill the creature book as soon as a fight starts, and again once it's won.
+  watch(combat, (state) => {
+    if (!state) return;
+    const book = recordEncounter(creatureBook.value, state);
+    if (book === creatureBook.value) return;
+    creatureBook.value = book;
+    saveProfile();
+  });
+
+  /** How many eggs were laid when the last run ended, for the end screens. */
+  const newEggs = ref(0);
+
+  /** Every run end: pairs in the home aquarium may lay an egg. */
+  function breed(finished: RunState) {
+    const laid = layEggs(homeAquarium.value, finished, gameData);
+    newEggs.value = laid.length;
+    if (!laid.length) return;
+    eggs.value = [...eggs.value, ...laid];
+    saveProfile();
+  }
+
+  /** The egg at `index` has hatched: its creature joins the home aquarium. */
+  function hatchEgg(index: number) {
+    const id = eggs.value[index];
+    if (id === undefined) return;
+    eggs.value = eggs.value.filter((_, i) => i !== index);
+    homeAquarium.value = [...homeAquarium.value, id];
+    saveProfile();
+  }
+
   /** End the run successfully: the bucket joins the home aquarium. */
   function bringHome(finished: RunState, how: 'won' | 'left') {
     run.value = finished;
     homeAquarium.value = bringCatchHome(homeAquarium.value, finished);
-    writeProfile({ version: PROFILE_VERSION, homeAquarium: homeAquarium.value });
+    saveProfile();
+    breed(finished);
     runEnd.value = how;
     screen.value = 'complete';
   }
@@ -102,6 +154,18 @@ export function useGame(initialSeed: number) {
     eventId.value = save.eventId;
     shopVisit.value = save.shopVisit;
     screen.value = save.screen;
+  }
+
+  /** Delete all progression: the saved run and the profile (home aquarium, eggs, creature book). Can't be undone. */
+  function resetProgress() {
+    run.value = null;
+    combat.value = null;
+    savedGame.value = null;
+    homeAquarium.value = [];
+    creatureBook.value = {};
+    eggs.value = [];
+    clearSavedGame();
+    clearProfile();
   }
 
   /** Back to the landing menu; the run stays saved. */
@@ -154,7 +218,9 @@ export function useGame(initialSeed: number) {
   }
 
   function dispatch(action: CombatAction) {
-    if (combat.value) combat.value = applyAction(combat.value, action, gameData);
+    if (!combat.value) return;
+    combat.value = applyAction(combat.value, action, gameData);
+    if (combat.value.phase === 'lost' && run.value) breed(run.value);
   }
 
   function claimVictory() {
@@ -182,7 +248,12 @@ export function useGame(initialSeed: number) {
     combat.value = null;
     // The boss getting away ends the run without a win: the bucket stays behind.
     runEnd.value = 'fled';
-    screen.value = isMapComplete(run.value) ? 'complete' : 'map';
+    if (isMapComplete(run.value)) {
+      breed(run.value);
+      screen.value = 'complete';
+    } else {
+      screen.value = 'map';
+    }
   }
 
   function chooseEvent(choiceIndex: number) {
@@ -253,8 +324,13 @@ export function useGame(initialSeed: number) {
     newRun,
     savedGame,
     homeAquarium,
+    creatureBook,
+    eggs,
+    newEggs,
+    hatchEgg,
     runEnd,
     resume,
     toMenu,
+    resetProgress,
   };
 }

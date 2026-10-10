@@ -36,7 +36,7 @@ const style = computed(() => ({
   width: `${props.size}px`,
   height: `${props.size}px`,
   backgroundImage: `url(${props.clip.url})`,
-  backgroundSize: `${props.clip.frames * props.size}px ${props.clip.rows * props.size}px`,
+  backgroundSize: `${(props.clip.columns ?? props.clip.frames) * props.size}px ${props.clip.rows * props.size}px`,
   backgroundPosition: `-${frame.value * props.size}px -${props.clip.row * props.size}px`,
 }));
 </script>
