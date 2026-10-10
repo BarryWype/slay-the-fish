@@ -9,9 +9,9 @@ declare module '*.vue' {
 /** Provided by electron/preload.cjs when running as the desktop app; undefined in a browser. */
 interface Window {
   desktop?: {
-    loadSave(): Promise<string | null>;
-    writeSave(json: string): Promise<void>;
-    deleteSave(): Promise<void>;
+    readData(name: 'save' | 'profile'): Promise<string | null>;
+    writeData(name: 'save' | 'profile', json: string): Promise<void>;
+    deleteData(name: 'save' | 'profile'): Promise<void>;
     quit(): Promise<void>;
   };
 }

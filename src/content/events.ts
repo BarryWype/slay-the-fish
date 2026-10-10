@@ -12,7 +12,7 @@ export const events: EventDef[] = [
     name: 'Enthusiastic Passerby',
     icon: '🧑',
     minColumn: 5,
-    description: 'A walker stops to admire your aquarium and insists on tipping you for every creature in it.',
+    description: 'A walker stops to admire your bucket and insists on tipping you for every creature in it.',
     choices: [{ label: 'Thank them', effects: [{ type: 'coinsPerCreature', amount: 2 }] }],
   },
   {

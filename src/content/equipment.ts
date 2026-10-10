@@ -17,7 +17,7 @@ export const equipment: EquipmentDef[] = [
     id: 'sharpSpear',
     name: 'Sharp Spear',
     icon: '🔱',
-    description: 'Captured creatures are sold on the spot for 20% more, instead of going to the aquarium.',
+    description: 'Captured creatures are sold on the spot for 20% more, instead of going into your bucket.',
     effects: [{ type: 'sellOnCapture', bonusPercent: 20 }],
   },
   {

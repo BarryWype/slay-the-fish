@@ -20,8 +20,11 @@ export interface RunState {
   position: string;
   /** Node ids travelled through, starting point included. */
   visited: string[];
-  /** Enemy definition ids of every creature beaten this run, in order (duplicates allowed). */
-  captured: string[];
+  /**
+   * The bucket: enemy definition ids of the creatures caught this run and not sold, in order
+   * (duplicates allowed). It only reaches the home aquarium if the run is won (`bringCatchHome`).
+   */
+  bucket: string[];
   coins: number;
   /** Equipment ids carried this run. */
   equipment: string[];
@@ -47,7 +50,7 @@ export function createRun(seed: number, data: GameData, buildId: string, maxHp =
     map: { columns: [] },
     position: START_NODE_ID,
     visited: [START_NODE_ID],
-    captured: [],
+    bucket: [],
     coins: 0,
     equipment: [...(build.startingEquipment ?? [])],
   };
@@ -125,6 +128,11 @@ export function visitEvent(
   return { run: next, eventId: ids[nextInt(next, 0, ids.length - 1)] };
 }
 
+/** Move to an adjacent "finish the session" node: a dead end, the run ends there as a success (see `bringCatchHome`). */
+export function visitLeave(run: RunState, nodeId: string): RunState {
+  return moveTo(run, nodeId, 'leave').next;
+}
+
 /** Move to an adjacent shop. */
 export function visitShop(run: RunState, nodeId: string): RunState {
   return moveTo(run, nodeId, 'shop').next;
@@ -132,7 +140,7 @@ export function visitShop(run: RunState, nodeId: string): RunState {
 
 /**
  * Carry the fight's outcome into the run: HP, floor, and (on a win) the creatures
- * captured, which go to the aquarium unless equipment sells them on the spot.
+ * captured, which go into the bucket unless equipment sells them on the spot.
  */
 export function finishCombat(run: RunState, combat: CombatState, data: GameData): RunState {
   const next = { ...clone(run), hp: Math.max(0, combat.player.hp) };
@@ -140,21 +148,30 @@ export function finishCombat(run: RunState, combat: CombatState, data: GameData)
   next.floor++;
   for (const enemy of combat.enemies) {
     const sale = instantSaleValue(enemy.defId, run.equipment, data);
-    if (sale === null) next.captured.push(enemy.defId);
+    if (sale === null) next.bucket.push(enemy.defId);
     else next.coins += sale;
   }
   return next;
 }
 
-/** Sell the captured creature at index `slot` for its sell value. */
+/** Sell the bucket's creature at index `slot` for its sell value. */
 export function sellCreature(run: RunState, slot: number, data: GameData): RunState {
-  const id = run.captured[slot];
+  const id = run.bucket[slot];
   if (id === undefined) throw new Error(`Nothing captured at slot ${slot}`);
   return {
     ...clone(run),
-    captured: run.captured.filter((_, i) => i !== slot),
+    bucket: run.bucket.filter((_, i) => i !== slot),
     coins: run.coins + (data.enemies[id]?.sellValue ?? 0),
   };
+}
+
+/**
+ * The home aquarium after a successful run (boss beaten, or the session finished at a leave node):
+ * everything still in the bucket joins it. A lost or abandoned run never calls this, so its
+ * bucket is lost.
+ */
+export function bringCatchHome(home: readonly string[], run: RunState): string[] {
+  return [...home, ...run.bucket];
 }
 
 /** Offer `count` distinct non-starter cards: shared ones plus those of the run's build. */

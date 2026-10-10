@@ -8,7 +8,7 @@ export function coinsPerCreatureValue(run: RunState, amount: number, data: GameD
   const bonus = equipmentEffects(run.equipment, data)
     .filter((e) => e.type === 'passerbyBonus')
     .reduce((sum, e) => sum + e.bonusPercent, 0);
-  return Math.ceil((amount * (100 + bonus)) / 100) * run.captured.length;
+  return Math.ceil((amount * (100 + bonus)) / 100) * run.bucket.length;
 }
 
 /** HP a `heal` of `percent` restores right now (never above max HP). */
@@ -26,8 +26,8 @@ export function describeEventEffect(effect: EventEffect, run: RunState, data: Ga
     case 'gainCoins':
       return `Gain 🪙 ${effect.amount}.`;
     case 'coinsPerCreature': {
-      const n = run.captured.length;
-      return `Gain 🪙 ${coinsPerCreatureValue(run, effect.amount, data)} (${n} creature${n === 1 ? '' : 's'} in your aquarium).`;
+      const n = run.bucket.length;
+      return `Gain 🪙 ${coinsPerCreatureValue(run, effect.amount, data)} (${n} creature${n === 1 ? '' : 's'} in your bucket).`;
     }
     case 'cardReward':
       return 'Choose a card to add to your deck.';

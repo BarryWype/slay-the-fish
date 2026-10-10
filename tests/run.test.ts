@@ -3,11 +3,12 @@ import {
   addCardToDeck,
   applyEventChoice,
   buyShopItem,
-  CHOKE_COLUMNS,
+  SHOP_COLUMNS,
   EVENT_FIGHT_CHANCE,
   eventChoiceBlocked,
   escapeRateReduction,
   availableDestinations,
+  bringCatchHome,
   createRun,
   finishCombat,
   isMapComplete,
@@ -16,6 +17,8 @@ import {
   shopItemBlocked,
   travelTo,
   visitEvent,
+  visitLeave,
+  visitShop,
   type RunState,
 } from '../src/engine';
 import { testData } from './fixtures';
@@ -50,8 +53,8 @@ describe('run', () => {
     const { run, combat } = travelTo(start, availableDestinations(start)[0].id, testData);
     const hurt = { ...combat, phase: 'won' as const, player: { ...combat.player, hp: 50 } };
     const after = finishCombat(run, hurt, testData);
-    expect(after).toMatchObject({ hp: 50, floor: 2, captured: ['dummy'] });
-    expect(run.captured).toEqual([]); // input untouched
+    expect(after).toMatchObject({ hp: 50, floor: 2, bucket: ['dummy'] });
+    expect(run.bucket).toEqual([]); // input untouched
     expect(addCardToDeck(after, 'twin', testData).deck).toEqual(['strike', 'defend', 'twin']);
   });
 });
@@ -73,19 +76,25 @@ describe('starting builds', () => {
 describe('capture record', () => {
   it('starts empty and only records creatures from won fights, in order', () => {
     let run = createRun(5, testData, 'basic');
-    expect(run.captured).toEqual([]);
+    expect(run.bucket).toEqual([]);
     const fight = travelTo(run, availableDestinations(run)[0].id, testData);
     run = finishCombat(fight.run, { ...fight.combat, phase: 'lost' }, testData);
-    expect(run.captured).toEqual([]);
+    expect(run.bucket).toEqual([]);
     run = finishCombat(run, { ...fight.combat, phase: 'won' }, testData);
     run = finishCombat(run, { ...fight.combat, phase: 'won' }, testData);
-    expect(run.captured).toEqual(['dummy', 'dummy']);
+    expect(run.bucket).toEqual(['dummy', 'dummy']);
+  });
+
+  it('a won run brings its bucket home, on top of what is already there', () => {
+    const run = { ...createRun(5, testData, 'basic'), bucket: ['dummy', 'cycler'] };
+    expect(bringCatchHome(['gambler'], run)).toEqual(['gambler', 'dummy', 'cycler']);
+    expect(run.bucket).toEqual(['dummy', 'cycler']); // input untouched
   });
 
   it('a creature that got away is not captured', () => {
     const run = createRun(5, testData, 'basic');
     const fight = travelTo(run, availableDestinations(run)[0].id, testData);
-    expect(finishCombat(fight.run, { ...fight.combat, phase: 'fled' }, testData)).toMatchObject({ captured: [], floor: 1 });
+    expect(finishCombat(fight.run, { ...fight.combat, phase: 'fled' }, testData)).toMatchObject({ bucket: [], floor: 1 });
   });
 
   it('selling a creature removes it and adds its sell value to the coins', () => {
@@ -94,8 +103,8 @@ describe('capture record', () => {
     const fight = travelTo(run, availableDestinations(run)[0].id, testData);
     run = finishCombat(fight.run, { ...fight.combat, phase: 'won' }, testData);
     const sold = sellCreature(run, 0, testData);
-    expect(sold).toMatchObject({ captured: [], coins: 5 });
-    expect(run.captured).toEqual(['dummy']); // input untouched
+    expect(sold).toMatchObject({ bucket: [], coins: 5 });
+    expect(run.bucket).toEqual(['dummy']); // input untouched
     expect(() => sellCreature(sold, 0, testData)).toThrow();
   });
 });
@@ -168,8 +177,8 @@ describe('equipment', () => {
   it('sellOnCapture sells captures on the spot for more, instead of the aquarium', () => {
     const run = { ...createRun(5, testData, 'basic'), equipment: ['spear'] };
     const fight = travelTo(run, availableDestinations(run)[0].id, testData);
-    expect(finishCombat(fight.run, { ...fight.combat, phase: 'won' }, testData)).toMatchObject({ captured: [], coins: 6 });
-    expect(finishCombat(fight.run, { ...fight.combat, phase: 'fled' }, testData)).toMatchObject({ captured: [], coins: 0 });
+    expect(finishCombat(fight.run, { ...fight.combat, phase: 'won' }, testData)).toMatchObject({ bucket: [], coins: 6 });
+    expect(finishCombat(fight.run, { ...fight.combat, phase: 'fled' }, testData)).toMatchObject({ bucket: [], coins: 0 });
   });
 });
 
@@ -204,11 +213,11 @@ describe('events', () => {
   });
 
   it('applies the choice: heal (capped), coins per creature (+ passerby bonus), lose HP + coins + card', () => {
-    const run = { ...createRun(5, data, 'basic'), hp: 70, captured: ['dummy', 'dummy'] };
+    const run = { ...createRun(5, data, 'basic'), hp: 70, bucket: ['dummy', 'dummy'] };
     expect(applyEventChoice(run, 'spot', 0, data).run.hp).toBe(80);
-    expect(applyEventChoice(run, 'spot', 1, data)).toMatchObject({ run: { coins: 4, captured: ['dummy', 'dummy'] }, cardReward: false });
+    expect(applyEventChoice(run, 'spot', 1, data)).toMatchObject({ run: { coins: 4, bucket: ['dummy', 'dummy'] }, cardReward: false });
     expect(applyEventChoice({ ...run, equipment: ['duck'] }, 'spot', 1, data).run.coins).toBe(6);
-    expect(applyEventChoice({ ...run, captured: [] }, 'spot', 1, data).run.coins).toBe(0);
+    expect(applyEventChoice({ ...run, bucket: [] }, 'spot', 1, data).run.coins).toBe(0);
     expect(applyEventChoice(run, 'spot', 2, data)).toMatchObject({ run: { hp: 65, coins: 7 }, cardReward: true });
   });
 
@@ -254,10 +263,35 @@ describe('shop', () => {
   };
   const [heart, cut] = data.shop;
 
-  it('the choke column is a shop when there is something to sell', () => {
+  it('the harbour column has 3–4 nodes: one dead-end finish node, the rest shops every route can reach', () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const { columns } = createRun(seed, data, 'basic').map;
+      const [before, harbour, after] = [columns[SHOP_COLUMNS[0] - 1], columns[SHOP_COLUMNS[0]], columns[SHOP_COLUMNS[0] + 1]];
+      expect(harbour.length).toBeGreaterThanOrEqual(3);
+      expect(harbour.length).toBeLessThanOrEqual(4);
+      expect([...harbour.map((n) => n.kind)].sort()).toEqual(['leave', ...Array(harbour.length - 1).fill('shop')]);
+      const leave = harbour.find((n) => n.kind === 'leave')!;
+      expect(leave.next).toEqual([]);
+      for (const node of before) {
+        expect(node.next.some((id) => harbour.find((h) => h.id === id)?.kind === 'shop'), `seed ${seed} ${node.id}`).toBe(true);
+      }
+      for (const h of harbour) expect(before.some((n) => n.next.includes(h.id)), `seed ${seed} ${h.id}`).toBe(true);
+      for (const a of after) expect(harbour.some((n) => n.next.includes(a.id)), `seed ${seed} ${a.id}`).toBe(true);
+    }
+    // Content with nothing to sell has no harbour.
+    expect(createRun(5, testData, 'basic').map.columns[SHOP_COLUMNS[0]].every((n) => n.kind === 'fight')).toBe(true);
+  });
+
+  it('only a finish node can be visited as one', () => {
     const run = createRun(5, data, 'basic');
-    expect(run.map.columns[CHOKE_COLUMNS[0]].map((n) => n.kind)).toEqual(['shop']);
-    expect(createRun(5, testData, 'basic').map.columns[CHOKE_COLUMNS[0]][0].kind).toBe('fight');
+    const harbour = run.map.columns[SHOP_COLUMNS[0]];
+    const leave = harbour.find((n) => n.kind === 'leave')!;
+    const shop = harbour.find((n) => n.kind === 'shop')!;
+    const before = { ...run, position: run.map.columns[SHOP_COLUMNS[0] - 1].find((n) => n.next.includes(leave.id))!.id };
+    expect(visitLeave(before, leave.id).position).toBe(leave.id);
+    expect(() => visitShop(before, leave.id)).toThrow();
+    const nextToShop = { ...run, position: run.map.columns[SHOP_COLUMNS[0] - 1].find((n) => n.next.includes(shop.id))!.id };
+    expect(() => visitLeave(nextToShop, shop.id)).toThrow();
   });
 
   it('a heart costs coins and heals up to max HP, as often as you can pay', () => {

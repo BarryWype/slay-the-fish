@@ -1,0 +1,157 @@
+# Architecture
+
+How Slay the Fish is put together, and the rules the code relies on. Read this before changing game state, saving, or anything that crosses layers. The README covers how to run the game and how to add content.
+
+## Layers
+
+| Folder | What it is | Rules |
+|---|---|---|
+| `src/engine/` | The game rules: combat, map, run, events, shop, equipment. Pure TypeScript. | No DOM, no Vue, no content imports, no `Math.random` or `Date.now`. `tests/architecture.test.ts` enforces this. Every function takes state in and returns new state. |
+| `src/content/` | Game data: creatures, cards, builds, equipment, events, shop items, creature types. Plain typed arrays. | Data only. `content/index.ts` passes everything through `buildGameData`, which validates it and fails at startup with a readable error. |
+| `src/ui/` | Vue components plus `useGame.ts`, which holds the current states and calls the engine. | No game rules here. Components read state and emit actions. Display-only fields (sprites, icons, terrain) live in content but are only read by the UI. |
+| `electron/` | The desktop shell: a window, plus a small file bridge for saving. | The page never touches the file system directly; it goes through `window.desktop` (see Persistence). |
+| `scripts/` | One-off asset generators (`npm run sprites`, `npm run terrain`). | Seeded: re-running gives the same images. |
+
+## State model
+
+- **`GameData`** (`engine/types.ts`): all content, indexed by id. It never changes during a game.
+- **`RunState`** (`engine/run.ts`): everything that lasts between fights: build, HP, deck, coins, equipment, map, position, and the **bucket** (see Aquariums).
+- **`CombatState`** (`engine/types.ts`): one fight: player, enemies, card piles, turn, phase, log.
+- **Plain JSON only.** Both states are plain, JSON-serialisable data, which is what makes saving trivial.
+- **Immutable updates.** Engine functions never mutate their input: they `clone` it and return the new state. `applyAction` returns the very same object when an action is illegal.
+- **Deterministic.** The random number generator's state is a single integer stored on the state itself (`rng`). The same seed and the same actions always give the same game, so a resumed save continues exactly as it would have. `tests/determinism.test.ts` checks this.
+- **UI glue.** `useGame.ts` keeps `run`, `combat`, `screen`, the pending card rewards, the open event and the shop visit in Vue refs, and swaps them for whatever the engine returns.
+
+## Screen flow
+
+```
+menu ──New run──▶ build ──Select──▶ map ──▶ fight ──win──▶ card reward ──▶ map …
+  ▲                                  │  └─▶ event (10%: a fight instead) ─▶ map
+  │                                  ├────▶ shop (column 10) ──▶ map
+  │                                  └────▶ 🚪 finish the session (column 10) ──confirm──▶ complete
+  │                                                                       └──Go back──▶ map
+  └──── Menu button (any screen) ◀── complete (boss beaten, session finished, or boss fled) / defeat
+```
+
+- **Menu:** Resume (disabled without a save), New run, See aquarium, Exit (desktop app only). The menu's background is the home aquarium. A 📖 tab on the right edge (menu and See aquarium view) opens the creature book (`CreatureBook.vue`): a drawer listing every creature, with how many are in the home aquarium.
+- **Build selection:** one tile per build. The image opens a details dialog (description, strong-against types, starter deck, equipment). The home aquarium fills the bottom half of the screen.
+
+## A run
+
+- **Map** (`engine/map.ts`), generated from the run seed in the style of Slay the Spire:
+  - **Size:** 21 columns. The start, the boss (last column) and any choke columns (`CHOKE_COLUMNS`, currently none) are single nodes that every route goes through.
+  - **Harbour column** (`SHOP_COLUMNS`, column 10, only when the content has shop items): a fixed column of 3–4 nodes in random lanes. One, drawn at random, is the **finish the session** node (`leave`); the rest are shops.
+    - **The finish node is a dead end:** no links out.
+    - **Links in and out** (`linkByLane`): each node links to the nodes in its own lane and the lanes either side. Every column-9 node is guaranteed at least one shop, so no route is forced to finish, and every node on both sides stays reachable. These are the only links on the map that may cross.
+  - **Paths:** between them, `MAP_PATHS` paths walk across `MAP_LANES` lanes. Each step stays in its lane or moves one lane up or down, and never crosses an existing link. Nodes are wherever a path passes.
+  - **Node kinds:** `start`, `fight`, `event`, `shop` or `leave`. About 30% of nodes are events (from `FIRST_EVENT_COLUMN` on, never more than `MAX_EVENTS_IN_A_ROW` along any route).
+- **Fights:**
+  - **On the map:** a fight node shows a creature type and a depth tier, not a specific creature.
+  - **On arrival:** `travelTo` draws an encounter of that type and tier (`encountersFor`).
+- **Events:**
+  - **On arrival:** `visitEvent` either starts a surprise fight (`EVENT_FIGHT_CHANCE`, 10%) or draws one of the events allowed at that column (`minColumn`).
+  - **Choices:** each choice is a list of `EventEffect`s, applied by `applyEventChoice` (`engine/events.ts`).
+- **Shop:**
+  - **Visiting:** `visitShop`, then `buyShopItem` with a `ShopVisit` that tracks purchases for that visit (`engine/shop.ts`).
+  - **Limits:** items can have a per-visit `limit`.
+- **Finish the session:**
+  - **Confirming:** clicking the 🚪 node opens a confirmation without moving (`leaveNodeId` in `useGame.ts`). **Go back** returns to the map; that prompt is never saved, so a resume lands on the map.
+  - **Finish:** `visitLeave` moves onto the node and the run ends as a success, so the bucket comes home.
+- **End of a fight** (`finishCombat`): carries HP over. A win also adds one to the floor counter and puts every enemy into the bucket, unless equipment sells it on the spot.
+
+## Combat and the Panic bar
+
+- **Turns:**
+  - **Start of the turn:** block resets, energy refills and you draw 5 cards.
+  - **End of the turn:** the hand is discarded and statuses tick. Each enemy then acts on its shown intent and its escape bar rises.
+  - **Win/lose check:** after every effect.
+- **Escape bar** (shown to the player as **Panic**, name in `ESCAPE_BAR_NAME`). Each creature has:
+  - **`escape`:** the bar, which starts at `escapeStart`.
+  - **`escapeRate`:** how much the bar rises after the creature's turn. **Snared** stops the rise for a turn.
+  - **`escapeAt`:** when the bar reaches it, the creature flees. The fight ends as `fled`, with no reward and no capture.
+- **Capture:** a creature at 0 HP **or** with its bar pushed to 0 is out of the fight and captured (`isAlive`).
+- **Card effects on the bar:**
+  - **`changeEscape`:** moves the bar.
+  - **`changeEscapeRate`:** changes the rise rate for the rest of the fight.
+- **Builds use the bar differently** (see `content/cards.ts`):
+  - **Rod fishing** manages tension: big hits raise Panic, skills calm and tire the fish.
+  - **Spear fishing** strikes hard, and its wounds slow the rise.
+  - **Foraging** barely deals damage: it snares creatures and calms them down to 0.
+
+## Aquariums: the bucket and the home aquarium
+
+There are two separate collections of creatures. They never share creatures, except in one moment: the end of a won run.
+
+| | **Bucket** | **Home aquarium** |
+|---|---|---|
+| What | The creatures caught during the current run | The creatures brought back from won runs |
+| Where in code | `RunState.bucket` | `Profile.homeAquarium` (`ui/saveStore.ts`) |
+| Saved in | `save.json` (with the run) | `profile.json` (lasts forever) |
+| Shown | Below the map (🪣 Bucket) | Menu background, build selection (🏠 Home aquarium) |
+| Interactive | Yes: click a creature to sell it for coins | View-only, for now |
+
+**Lifecycle:**
+1. **New run:** the bucket starts empty. The home aquarium is unchanged.
+2. **During the run:**
+   - **Captures:** captured creatures go into the bucket. With **Sharp Spear** they're sold on the spot instead and never reach it.
+   - **Selling:** the player can sell creatures from the bucket at any time.
+   - **Events:** events can read the bucket. The Enthusiastic Passerby tips coins per creature in it.
+3. **Successful run**, either the boss beaten (`claimVictory`) or the session finished at the 🚪 node (`finishSession`): `bringCatchHome` adds everything still in the bucket to the home aquarium, and the profile is written.
+4. **Lost run, abandoned run (New run over a save), or the boss fleeing:** the bucket is lost. The home aquarium is unchanged.
+
+Anything meant to last between runs (score, unlocks, statistics) belongs in the **profile**, never in `RunState`.
+
+## Persistence
+
+All saving lives in `ui/saveStore.ts`. There are two files, each with its own version number:
+
+| File | Contents | Written | Deleted |
+|---|---|---|---|
+| `save.json` | `SavedGame`: version, seed, screen, run, combat, pending card rewards, open event, shop visit | After every state change (a watcher in `useGame.ts`) | When the run is lost or completed |
+| `profile.json` | `Profile`: version, home aquarium | When a successful run brings its bucket home | Never |
+
+- **Where:** in the desktop app, in the app's data folder (`app.getPath('userData')`, e.g. `~/Library/Application Support/Slay the Fish`). In a browser, localStorage under `slay-the-fish:save` and `slay-the-fish:profile`.
+- **Desktop bridge:** `electron/preload.cjs` exposes `window.desktop.readData / writeData / deleteData(name)` and `quit()`. `electron/main.js` only accepts the names in `DATA_FILES`, so the page can't touch any other file.
+- **Safe writes:** a file is written to `name.json.tmp`, then renamed over the real one, so a crash mid-write can't corrupt it. Writes are queued one after another, so an older write can never land after a newer one.
+- **Versions** (`SAVE_VERSION`, currently 2, and `PROFILE_VERSION`, currently 1). When a saved shape changes:
+  1. Bump the version.
+  2. Convert older files in `upgradeSave` (or the profile's equivalent).
+  3. A file that can't be upgraded is ignored rather than crashing: no Resume, or a fresh profile.
+
+  Example: version 1 saves called the bucket `run.captured`, and `upgradeSave` renames it.
+- **Resume** restores every saved field, so the player returns to the same screen. Mid-fight saves include the hand, energy and Panic.
+
+## Desktop app and releases
+
+- **Development:** `npm run electron:dev` opens the game in Electron against the running Vite dev server.
+- **Build:** `npm run electron:build` runs the typecheck, builds the game, then packages it into `release/`. Code signing is off (`"identity": null` for macOS) until there's a certificate.
+- **Artifacts** have fixed names, so the README's "latest" download links never change: `slay-the-fish-mac-arm64.dmg`, `slay-the-fish-windows.exe`, `slay-the-fish-linux.AppImage`.
+- **Release:** pushing a `v*` tag runs `.github/workflows/release.yml`. It builds and tests on macOS, Windows and Linux, then publishes a GitHub Release with the three installers. The tag should match `"version"` in `package.json`.
+- **Loading from disk:** `vite.config.ts` uses `base: './'` so the built page loads its assets with relative paths from disk.
+
+## Assets
+
+- **Sprite sheets** are registered in `ui/sprites.ts` (`SHEETS`) and referenced from content as `{ sheet, index }` (1-based).
+- **Animated creature sheets** (`assets/creatures/NNN.png`, 6 frames × 4 rows: idle, attack, capture, flee) come from `scripts/generate-creature-sprites.mjs`.
+- **Map terrain patches** (`assets/terrain.png`, one 40×40 tile per creature type) come from `scripts/generate-map-terrain.mjs`. Each creature type points to its tile with `terrain` in `content/creatureTypes.ts`.
+
+## Testing
+
+- **Running them:** `npm test` (Vitest) and `npm run typecheck`.
+- **Engine tests** use `tests/fixtures.ts`, small content with fixed numbers, so rebalancing real content doesn't break them.
+- **Content tests** run against the real data.
+- **Determinism:** many map tests check rules across many seeds rather than one example.
+- **Not covered:** the UI layer and `saveStore.ts` have no automated tests. They were checked by hand in the browser and with an Electron smoke test.
+
+## Tuning knobs
+
+| Setting | Where | What it controls |
+|---|---|---|
+| `MAP_COLUMNS`, `MAP_LANES`, `MAP_PATHS`, `CHOKE_COLUMNS`, `SHOP_COLUMNS` | `engine/map.ts` | Map length, width, density, single-node columns, shop and finish-node column |
+| `EVENT_CHANCE`, `MAX_EVENTS_IN_A_ROW`, `FIRST_EVENT_COLUMN` | `engine/map.ts` | Share and spread of events |
+| `EVENT_FIGHT_CHANCE`, `CARD_REWARD_COUNT` | `engine/run.ts` | Surprise fights in events, card choices after a win |
+| `STARTING_HAND_SIZE`, `BASE_ENERGY`, `VULNERABLE_MULTIPLIER`, `WEAK_MULTIPLIER` | `engine/constants.ts` | Combat basics |
+| `sellValue`, `escapeAt`, `escapeStart`, `escapeRate`, `temperament`, `tier` | `content/creatures.ts` | Per-creature balance |
+| Item prices and limits | `content/shop.ts` | Shop |
+
+Percentages in equipment and event effects are whole numbers (20 = 20%), and results are **rounded up**: the Reliable Reel's rate cut, the Sharp Spear's sale bonus, passerby bonuses.

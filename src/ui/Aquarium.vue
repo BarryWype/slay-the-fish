@@ -5,7 +5,19 @@ import AnimatedSprite from './AnimatedSprite.vue';
 import SpriteView from './SpriteView.vue';
 import { animatedSheetFor, creatureClip } from './sprites';
 
-const props = defineProps<{ captured: string[]; data: GameData }>();
+const props = withDefaults(
+  defineProps<{
+    /** Creature ids to show (a run's bucket, or the home aquarium). */
+    creatures: string[];
+    data: GameData;
+    /** Header, e.g. "Bucket" or "Home aquarium". */
+    title?: string;
+    icon?: string;
+    /** False: just to look at, creatures can't be clicked or sold. */
+    interactive?: boolean;
+  }>(),
+  { interactive: true, title: 'Aquarium', icon: '🐠' },
+);
 const emit = defineEmits<{ sell: [slot: number] }>();
 
 const SIZE = 96;
@@ -43,7 +55,7 @@ function placement(habitat: Habitat, slot: number) {
 
 const residents = computed(() => {
   const copies = new Map<string, number>();
-  return props.captured.map((id, slot) => {
+  return props.creatures.map((id, slot) => {
     const def = props.data.enemies[id];
     const habitat = def?.habitat ?? 'swim';
     const copy = copies.get(id) ?? 0;
@@ -89,10 +101,10 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
 </script>
 
 <template>
-  <section class="aquarium" aria-label="Aquarium">
+  <section class="aquarium" :aria-label="title">
     <header class="label">
-      <span>🐠 Aquarium</span>
-      <span class="count">{{ captured.length }} caught</span>
+      <span>{{ icon }} {{ title }}</span>
+      <span class="count">{{ creatures.length }} caught</span>
     </header>
 
     <div class="tank">
@@ -119,13 +131,13 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
         v-for="r in residents"
         :key="r.key"
         class="resident"
-        :class="[r.habitat, { selected: r.key === selectedKey }]"
+        :class="[r.habitat, { selected: r.key === selectedKey, interactive }]"
         :style="r.style"
-        :title="`${r.name} (🪙 ${r.sellValue})`"
-        role="button"
-        tabindex="0"
-        @click="selectedKey = r.key"
-        @keydown.enter="selectedKey = r.key"
+        :title="interactive ? `${r.name} (🪙 ${r.sellValue})` : r.name"
+        :role="interactive ? 'button' : undefined"
+        :tabindex="interactive ? 0 : undefined"
+        @click="interactive && (selectedKey = r.key)"
+        @keydown.enter="interactive && (selectedKey = r.key)"
       >
         <div class="facing">
           <div class="bob">
@@ -145,7 +157,7 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
         </div>
       </div>
 
-      <p v-if="!captured.length" class="empty">Your aquarium is empty. Catch something!</p>
+      <p v-if="!creatures.length" class="empty">Nothing in here yet. Catch something!</p>
       <div class="glare" />
     </div>
   </section>
@@ -231,10 +243,10 @@ const bubbles = Array.from({ length: 14 }, (_, i) => ({
 .bottom .bob { animation: none; }
 .emoji { font-size: 3rem; }
 
-.resident { cursor: pointer; }
+.resident.interactive { cursor: pointer; }
 .resident:focus { outline: none; }
-.resident:hover .bob,
-.resident:focus-visible .bob { filter: drop-shadow(0 0 4px rgb(255 255 255 / 0.7)); }
+.resident.interactive:hover .bob,
+.resident.interactive:focus-visible .bob { filter: drop-shadow(0 0 4px rgb(255 255 255 / 0.7)); }
 .resident.selected .bob { filter: drop-shadow(0 0 6px var(--highlight)); }
 
 .sell-panel {

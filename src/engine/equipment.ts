@@ -13,7 +13,7 @@ export function escapeRateReduction(rate: number, percent: number): number {
 
 /**
  * Coins a captured creature sells for on the spot, or null if no equipment sells
- * on capture (it goes to the aquarium instead). Bonuses add up, rounded up.
+ * on capture (it goes into the bucket instead). Bonuses add up, rounded up.
  */
 export function instantSaleValue(defId: string, equipment: readonly string[], data: GameData): number | null {
   const bonuses = equipmentEffects(equipment, data).filter((e) => e.type === 'sellOnCapture');

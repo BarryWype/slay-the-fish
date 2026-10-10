@@ -5,23 +5,31 @@ import { fileURLToPath } from 'node:url';
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** The saved run, in the app's data folder (e.g. ~/Library/Application Support/Slay the Fish on macOS). */
-const savePath = () => path.join(app.getPath('userData'), 'save.json');
+/**
+ * The game's data files, in the app's data folder (e.g. ~/Library/Application Support/Slay the Fish
+ * on macOS): `save` is the run in progress, `profile` what lasts between runs (the home aquarium).
+ * Only these names are accepted, so the page can't touch any other file.
+ */
+const DATA_FILES = new Set(['save', 'profile']);
+function dataPath(name) {
+  if (!DATA_FILES.has(name)) throw new Error(`Unknown data file "${name}"`);
+  return path.join(app.getPath('userData'), `${name}.json`);
+}
 
-ipcMain.handle('save:load', async () => {
+ipcMain.handle('data:read', async (_event, name) => {
   try {
-    return await readFile(savePath(), 'utf8');
+    return await readFile(dataPath(name), 'utf8');
   } catch {
     return null;
   }
 });
-// Write to a temporary file, then rename it over the save: a crash mid-write can't corrupt it.
-ipcMain.handle('save:write', async (_event, json) => {
-  const tmp = `${savePath()}.tmp`;
+// Write to a temporary file, then rename it over the real one: a crash mid-write can't corrupt it.
+ipcMain.handle('data:write', async (_event, name, json) => {
+  const tmp = `${dataPath(name)}.tmp`;
   await writeFile(tmp, json, 'utf8');
-  await rename(tmp, savePath());
+  await rename(tmp, dataPath(name));
 });
-ipcMain.handle('save:delete', () => rm(savePath(), { force: true }));
+ipcMain.handle('data:delete', (_event, name) => rm(dataPath(name), { force: true }));
 ipcMain.handle('app:quit', () => app.quit());
 
 function createWindow() {

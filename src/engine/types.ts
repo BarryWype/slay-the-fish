@@ -83,7 +83,7 @@ export interface BuildDef {
 export type EquipmentEffect =
   /** Every creature's escape rate drops by this share (at least 1, rounded up) at the start of each fight. */
   | { type: 'slowEscape'; percent: number }
-  /** Captured creatures are sold on the spot, for this much more, instead of going to the aquarium. */
+  /** Captured creatures are sold on the spot, for this much more, instead of going into the bucket. */
   | { type: 'sellOnCapture'; bonusPercent: number }
   /** Enthusiastic passersby pay this much more per fish. Passerby encounters aren't in the game yet. */
   | { type: 'passerbyBonus'; bonusPercent: number };
@@ -104,7 +104,7 @@ export type EventEffect =
   | { type: 'heal'; percent: number }
   | { type: 'loseHp'; amount: number }
   | { type: 'gainCoins'; amount: number }
-  /** Coins for each creature in the aquarium (raised by passerby equipment bonuses). The creatures stay. */
+  /** Coins for each creature in the bucket (raised by passerby equipment bonuses). The creatures stay. */
   | { type: 'coinsPerCreature'; amount: number }
   /** Offer the usual pick-1-of-3 card reward afterwards. */
   | { type: 'cardReward' };

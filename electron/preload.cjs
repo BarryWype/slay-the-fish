@@ -3,8 +3,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
-  loadSave: () => ipcRenderer.invoke('save:load'),
-  writeSave: (json) => ipcRenderer.invoke('save:write', json),
-  deleteSave: () => ipcRenderer.invoke('save:delete'),
+  readData: (name) => ipcRenderer.invoke('data:read', name),
+  writeData: (name, json) => ipcRenderer.invoke('data:write', name, json),
+  deleteData: (name) => ipcRenderer.invoke('data:delete', name),
   quit: () => ipcRenderer.invoke('app:quit'),
 });

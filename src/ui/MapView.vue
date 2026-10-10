@@ -83,6 +83,7 @@ function label(node: MapNode) {
   if (node.kind === 'start') return props.data.character.home.icon ?? '🏠';
   if (visited.value.has(node.id)) return '✓';
   if (node.kind === 'shop') return '🛒';
+  if (node.kind === 'leave') return '🚪';
   if (node.kind === 'event' || node.creatureType === null) return '❓';
   return props.data.creatureTypes[node.creatureType]?.icon ?? '⚔️';
 }
@@ -105,6 +106,7 @@ function terrain(node: MapNode) {
 function tooltipFor(node: MapNode): { name: string; hint?: string } {
   if (node.kind === 'start') return { name: props.data.character.home.name };
   if (node.kind === 'shop') return { name: 'Shop' };
+  if (node.kind === 'leave') return { name: 'Finish the session', hint: 'Ends the run here; your bucket comes home' };
   if (node.kind === 'event' || node.creatureType === null) return { name: 'Event' };
   const name = props.data.creatureTypes[node.creatureType]?.name ?? node.creatureType;
   return { name, hint: isStrong(node) ? 'Your gear is strong against these' : undefined };
@@ -170,7 +172,7 @@ function choose(node: MapNode) {
           v-for="node in columns.flat()"
           :key="node.id"
           class="node"
-          :class="[nodeState(node), { strong: isStrong(node), event: node.kind === 'event', shop: node.kind === 'shop', 'on-terrain': !!terrain(node) }]"
+          :class="[nodeState(node), { strong: isStrong(node), event: node.kind === 'event', shop: node.kind === 'shop', leave: node.kind === 'leave', 'on-terrain': !!terrain(node) }]"
           :transform="`translate(${x(node)} ${y(node)})`"
           :role="destinations.has(node.id) ? 'button' : undefined"
           :tabindex="destinations.has(node.id) ? 0 : undefined"
@@ -283,6 +285,7 @@ function choose(node: MapNode) {
 .node.on-terrain text { filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.8)); }
 .node.event circle { fill: #2e2a3d; }
 .node.shop circle { fill: #3d3422; }
+.node.leave circle { fill: #23392f; }
 
 .node.current circle { fill: var(--energy); stroke: #fff; }
 .node.current text { fill: #1b1d24; font-weight: 800; font-size: 22px; }

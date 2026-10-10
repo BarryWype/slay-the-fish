@@ -6,9 +6,11 @@ import {
   buyShopItem,
   findNode,
   applyAction,
+  bringCatchHome,
   createRun,
   finishCombat,
   isMapComplete,
+  visitLeave,
   rollCardRewards,
   sellCreature,
   travelTo,
@@ -19,9 +21,18 @@ import {
   type RunState,
   type ShopVisit,
 } from '../engine';
-import { clearSavedGame, loadSavedGame, SAVE_VERSION, writeSavedGame, type SavedGame } from './saveStore';
+import {
+  clearSavedGame,
+  loadProfile,
+  loadSavedGame,
+  PROFILE_VERSION,
+  SAVE_VERSION,
+  writeProfile,
+  writeSavedGame,
+  type SavedGame,
+} from './saveStore';
 
-export type Screen = 'menu' | 'build' | 'map' | 'combat' | 'event' | 'shop' | 'reward' | 'complete';
+export type Screen = 'menu' | 'build' | 'map' | 'combat' | 'event' | 'shop' | 'leave' | 'reward' | 'complete';
 
 /**
  * Thin glue between Vue and the engine: holds the current immutable states in
@@ -41,6 +52,22 @@ export function useGame(initialSeed: number) {
   /** The run that Resume would pick up, if any. */
   const savedGame = shallowRef<SavedGame | null>(null);
   loadSavedGame().then((save) => (savedGame.value = save));
+  /** Creatures brought home from won runs; shown on the menu and build screens. */
+  const homeAquarium = ref<string[]>([]);
+  loadProfile().then((profile) => (homeAquarium.value = profile.homeAquarium));
+  /** The finish node the player clicked, waiting for them to confirm on the leave screen. */
+  const leaveNodeId = ref<string | null>(null);
+  /** On the end screen, how the run ended. Only `fled` leaves the bucket behind. */
+  const runEnd = ref<'won' | 'left' | 'fled'>('won');
+
+  /** End the run successfully: the bucket joins the home aquarium. */
+  function bringHome(finished: RunState, how: 'won' | 'left') {
+    run.value = finished;
+    homeAquarium.value = bringCatchHome(homeAquarium.value, finished);
+    writeProfile({ version: PROFILE_VERSION, homeAquarium: homeAquarium.value });
+    runEnd.value = how;
+    screen.value = 'complete';
+  }
 
   // Autosave after every change; a lost or finished run deletes the save.
   watch([run, combat, screen, rewardChoices, eventId, shopVisit], () => {
@@ -53,7 +80,8 @@ export function useGame(initialSeed: number) {
     savedGame.value = {
       version: SAVE_VERSION,
       seed: seed.value,
-      screen: screen.value,
+      // The finish-the-session prompt is only a confirmation; resuming goes back to the map.
+      screen: screen.value === 'leave' ? 'map' : screen.value,
       run: run.value,
       combat: combat.value,
       rewardChoices: rewardChoices.value,
@@ -96,6 +124,11 @@ export function useGame(initialSeed: number) {
   function travel(nodeId: string) {
     if (!run.value) return;
     const kind = findNode(run.value.map, nodeId)?.kind;
+    if (kind === 'leave') {
+      leaveNodeId.value = nodeId;
+      screen.value = 'leave';
+      return;
+    }
     if (kind === 'shop') {
       run.value = visitShop(run.value, nodeId);
       shopVisit.value = { bought: {} };
@@ -129,8 +162,7 @@ export function useGame(initialSeed: number) {
     const finished = finishCombat(run.value, combat.value, gameData);
     combat.value = null;
     if (isMapComplete(finished)) {
-      run.value = finished;
-      screen.value = 'complete';
+      bringHome(finished, 'won');
       return;
     }
     const rewards = rollCardRewards(finished, gameData);
@@ -148,6 +180,8 @@ export function useGame(initialSeed: number) {
     if (!run.value || !combat.value || combat.value.phase !== 'fled') return;
     run.value = finishCombat(run.value, combat.value, gameData);
     combat.value = null;
+    // The boss getting away ends the run without a win: the bucket stays behind.
+    runEnd.value = 'fled';
     screen.value = isMapComplete(run.value) ? 'complete' : 'map';
   }
 
@@ -177,6 +211,19 @@ export function useGame(initialSeed: number) {
     screen.value = 'map';
   }
 
+  /** Confirmed: move onto the finish node, which ends the run and brings the bucket home. */
+  function finishSession() {
+    if (!run.value || !leaveNodeId.value) return;
+    bringHome(visitLeave(run.value, leaveNodeId.value), 'left');
+    leaveNodeId.value = null;
+  }
+
+  /** Not yet: back to the map without moving. */
+  function cancelLeave() {
+    leaveNodeId.value = null;
+    screen.value = 'map';
+  }
+
   function chooseReward(cardId: string | null) {
     if (run.value && cardId) run.value = addCardToDeck(run.value, cardId, gameData);
     screen.value = 'map';
@@ -200,9 +247,13 @@ export function useGame(initialSeed: number) {
     chooseEvent,
     buy,
     leaveShop,
+    finishSession,
+    cancelLeave,
     sell,
     newRun,
     savedGame,
+    homeAquarium,
+    runEnd,
     resume,
     toMenu,
   };

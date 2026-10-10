@@ -7,8 +7,15 @@ export const MAP_COLUMNS = 21;
 export const MAP_LANES = 5;
 /** Paths traced from start to boss: more paths, more events and more ways to branch. */
 export const MAP_PATHS = 6;
-/** Columns holding a single node every route goes through (besides the start and the boss): a shop. */
-export const CHOKE_COLUMNS = [10];
+/** Columns every route goes through (besides the start and the boss), as a single node. */
+export const CHOKE_COLUMNS: number[] = [];
+/**
+ * "Harbour" columns of 3–4 fixed nodes: one "finish the session" node, a dead end where the
+ * run ends successfully (the bucket comes home), and shops. Every route can reach a shop.
+ * Only when the content has shop items.
+ */
+export const SHOP_COLUMNS = [10];
+const HARBOUR_SIZE: [number, number] = [3, 4];
 /**
  * Chance a fight from `FIRST_EVENT_COLUMN` on rolls an event instead. Columns before that and
  * rolls refused by `MAX_EVENTS_IN_A_ROW` stay fights, so overall about 30% of nodes are events.
@@ -19,7 +26,7 @@ export const MAX_EVENTS_IN_A_ROW = 2;
 /** The first map column that can hold an event; earlier ones are all fights. */
 export const FIRST_EVENT_COLUMN = 3;
 
-export type MapNodeKind = 'start' | 'fight' | 'event' | 'shop';
+export type MapNodeKind = 'start' | 'fight' | 'event' | 'shop' | 'leave';
 
 export interface MapNode {
   /** `${column}-${row}` */
@@ -44,27 +51,36 @@ export interface GameMap {
 
 /**
  * Built like Slay the Spire's map. The start, the boss and every choke column
- * hold a single event; between them, `MAP_PATHS` paths walk across a grid of
+ * hold a single node; between them, `MAP_PATHS` paths walk across a grid of
  * `MAP_LANES` lanes, each step staying in its lane or moving one up or down,
  * never crossing a link already drawn. Events are wherever a path passes and
  * links are the paths' steps, so routes branch and merge naturally, every event
- * is reachable and has a way forward, and links never cross.
+ * is reachable and has a way forward, and links never cross. Harbour columns
+ * (`SHOP_COLUMNS`) are fixed too, linked to their neighbours by lane (`linkByLane`),
+ * and events are then placed on top (`placeEvents`).
  */
 export function generateMap(holder: RngHolder, data: GameData, columnCount = MAP_COLUMNS): GameMap {
   const middle = Math.floor(MAP_LANES / 2);
   const single = (column: number) => column === 0 || column === columnCount - 1 || CHOKE_COLUMNS.includes(column);
+  const harbours = data.shop.length ? SHOP_COLUMNS : [];
+  const fixed = (column: number) => single(column) || harbours.includes(column);
   // lanes[column] = occupied lanes; edges[column] = "from>to" lane links into the next column.
-  const lanes: Set<number>[] = Array.from({ length: columnCount }, (_, c) => new Set(single(c) ? [middle] : []));
+  const lanes: Set<number>[] = Array.from({ length: columnCount }, (_, c) => {
+    if (single(c)) return new Set([middle]);
+    if (!harbours.includes(c)) return new Set<number>();
+    const allLanes = shuffleInPlace(holder, Array.from({ length: MAP_LANES }, (_, l) => l));
+    return new Set(allLanes.slice(0, nextInt(holder, ...HARBOUR_SIZE)));
+  });
   const edges: Set<string>[] = Array.from({ length: columnCount }, () => new Set());
 
-  // Trace the paths through each stretch of grid columns between two single ones.
+  // Trace the paths through each stretch of grid columns between two fixed ones.
   for (let first = 1; first < columnCount - 1; ) {
-    if (single(first)) {
+    if (fixed(first)) {
       first++;
       continue;
     }
     let last = first;
-    while (!single(last + 1)) last++;
+    while (!fixed(last + 1)) last++;
     for (let path = 0; path < MAP_PATHS; path++) {
       // The first two paths start in different lanes so a stretch always branches.
       let lane = nextInt(holder, 0, MAP_LANES - 1);
@@ -99,24 +115,40 @@ export function generateMap(holder: RngHolder, data: GameData, columnCount = MAP
         next: [],
       }));
   });
+  for (const column of harbours) {
+    const nodes = columns[column];
+    for (const node of nodes) Object.assign(node, { kind: 'shop', creatureType: null });
+    nodes[nextInt(holder, 0, nodes.length - 1)].kind = 'leave';
+  }
   for (let column = 0; column < columnCount - 1; column++) {
     const [from, to] = [columns[column], columns[column + 1]];
-    for (const node of from) {
-      // Into or out of a single-event column, everything links to everything.
-      const targets =
-        from.length === 1 || to.length === 1
-          ? to
-          : to.filter((t) => edges[column].has(`${node.lane}>${t.lane}`));
-      node.next = targets.map((t) => t.id);
-    }
-  }
-  if (data.shop.length) {
-    for (const column of CHOKE_COLUMNS) {
-      for (const node of columns[column] ?? []) Object.assign(node, { kind: 'shop', creatureType: null });
+    if (single(column) || single(column + 1)) {
+      // Into or out of a single-node column, everything links to everything.
+      for (const node of from) node.next = to.map((t) => t.id);
+    } else if (harbours.includes(column) || harbours.includes(column + 1)) {
+      // The finish node is a dead end; only shops lead on.
+      linkByLane(from.filter((n) => n.kind !== 'leave'), to);
+    } else {
+      for (const node of from) node.next = to.filter((t) => edges[column].has(`${node.lane}>${t.lane}`)).map((t) => t.id);
     }
   }
   if (Object.keys(data.events).length) placeEvents(holder, columns);
   return { columns };
+}
+
+/**
+ * Links each `from` node to the `to` nodes in its lane or the lanes next to it, then makes
+ * sure every `from` node has somewhere to go besides a finish node, and every `to` node is
+ * reachable (each time picking the closest lane).
+ */
+function linkByLane(from: MapNode[], to: MapNode[]): void {
+  const distance = (a: MapNode, b: MapNode) => Math.abs(a.lane - b.lane);
+  const closest = (node: MapNode, pool: MapNode[]) => pool.reduce((best, n) => (distance(node, n) < distance(node, best) ? n : best));
+  const links = new Map(from.map((f) => [f, to.filter((t) => distance(f, t) <= 1)]));
+  const onward = to.filter((t) => t.kind !== 'leave');
+  for (const [f, targets] of links) if (!targets.some((t) => t.kind !== 'leave')) targets.push(closest(f, onward));
+  for (const t of to) if (![...links.values()].some((targets) => targets.includes(t))) links.get(closest(t, from))!.push(t);
+  for (const [f, targets] of links) f.next = [...new Set(targets)].sort((a, b) => a.row - b.row).map((t) => t.id);
 }
 
 /**

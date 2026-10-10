@@ -21,7 +21,7 @@ function initialSeed() {
 }
 
 const game = useGame(initialSeed());
-const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit, savedGame } = game;
+const { data, seed, run, combat, screen, rewardChoices, eventId, shopVisit, savedGame, homeAquarium, runEnd } = game;
 
 function newRun() {
   game.newRun(randomSeed());
@@ -53,11 +53,21 @@ function newRunFromMenu() {
   </header>
 
   <main>
-    <MenuScreen v-if="screen === 'menu'" :can-resume="!!savedGame" @resume="game.resume" @new-run="newRunFromMenu" />
-    <BuildSelect v-else-if="screen === 'build' || !run" :data="data" @choose="game.chooseBuild" />
+    <MenuScreen
+      v-if="screen === 'menu'"
+      :can-resume="!!savedGame"
+      :home-aquarium="homeAquarium"
+      :data="data"
+      @resume="game.resume"
+      @new-run="newRunFromMenu"
+    />
+    <div v-else-if="screen === 'build' || !run" class="build-layout">
+      <BuildSelect class="build-choices" :data="data" @choose="game.chooseBuild" />
+      <Aquarium class="aquarium" :creatures="homeAquarium" :data="data" :interactive="false" title="Home aquarium" icon="🏠" />
+    </div>
     <div v-else-if="screen === 'map'" class="map-layout">
       <MapView :run="run" :data="data" @travel="game.travel" />
-      <Aquarium class="aquarium" :captured="run.captured" :data="data" @sell="game.sell" />
+      <Aquarium class="aquarium" :creatures="run.bucket" :data="data" title="Bucket" icon="🪣" @sell="game.sell" />
     </div>
     <CombatView
       v-else-if="screen === 'combat' && combat"
@@ -78,11 +88,37 @@ function newRunFromMenu() {
       @buy="game.buy"
       @leave="game.leaveShop"
     />
+    <section v-else-if="screen === 'leave'" class="complete">
+      <div class="leave-icon">🚪</div>
+      <h2>Finish the session?</h2>
+      <p>
+        This ends your run here. The {{ run.bucket.length }} creature{{ run.bucket.length === 1 ? '' : 's' }} in your
+        bucket {{ run.bucket.length === 1 ? 'joins' : 'join' }} your home aquarium.
+      </p>
+      <div class="complete-actions">
+        <button class="ghost" @click="game.cancelLeave">Go back</button>
+        <button @click="game.finishSession">Finish the session</button>
+      </div>
+    </section>
     <RewardScreen v-else-if="screen === 'reward'" :choices="rewardChoices" :data="data" @choose="game.chooseReward" />
     <section v-else-if="screen === 'complete'" class="complete">
-      <h2>Run complete!</h2>
-      <p>You cleared every fight on the map with {{ run.hp }} HP left.</p>
-      <button @click="newRun">Start a new run</button>
+      <template v-if="runEnd !== 'fled'">
+        <h2>{{ runEnd === 'won' ? 'Run complete!' : 'Heading home' }}</h2>
+        <p v-if="runEnd === 'won'">You cleared every fight on the map with {{ run.hp }} HP left.</p>
+        <p v-else>You call it a day halfway along the shore, with {{ run.hp }} HP left.</p>
+        <p>
+          🪣 → 🏠 {{ run.bucket.length }} creature{{ run.bucket.length === 1 ? '' : 's' }} from your bucket
+          {{ run.bucket.length === 1 ? 'joins' : 'join' }} your home aquarium.
+        </p>
+      </template>
+      <template v-else>
+        <h2>The boss got away</h2>
+        <p>Your run ends here, and your bucket stays behind.</p>
+      </template>
+      <div class="complete-actions">
+        <button class="ghost" @click="game.toMenu">Back to the menu</button>
+        <button @click="newRun">Start a new run</button>
+      </div>
     </section>
   </main>
 </template>
@@ -99,6 +135,20 @@ function newRunFromMenu() {
 }
 .map-layout .aquarium { flex: 1; }
 
+/* Build choices on top (scrolling if needed), the aquarium on the bottom half. */
+.build-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: calc(100vh - 64px);
+  padding-bottom: 12px;
+}
+.build-layout .build-choices { flex: 1; min-height: 0; overflow-y: auto; }
+.build-layout .aquarium { flex: 0 0 50vh; }
+
 .complete { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 15vh; }
 .complete h2 { margin: 0; font-size: 2rem; }
+.complete p { margin: 0; max-width: 520px; text-align: center; }
+.leave-icon { font-size: 4rem; line-height: 1; }
+.complete-actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>
